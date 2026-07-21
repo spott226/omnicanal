@@ -5,19 +5,66 @@ import { FormEvent, useMemo, useState } from "react";
 type Channel = "instagram" | "whatsapp" | "facebook";
 type Temperature = "Frío" | "Tibio" | "Caliente";
 type View = "Resumen" | "Conversaciones" | "Contactos" | "Automatizaciones" | "Agente de IA" | "Laboratorio" | "Estadísticas" | "Canales" | "Configuración" | "Superadmin";
-type Conversation = { id: number; name: string; initials: string; channel: Channel; temperature: Temperature; last: string; time: string; unread: number; ai: boolean; score: number; interest: string; stage: string; color: string };
+type ChatMessage = { body: string; from: "contact" | "ai" | "human"; time: string };
+type Conversation = { id: number; name: string; initials: string; channel: Channel; temperature: Temperature; last: string; time: string; unread: number; ai: boolean; score: number; interest: string; stage: string; color: string; summary: string; messages: ChatMessage[] };
 
 const CHANNELS: Record<Channel, { label: string; short: string }> = {
   instagram: { label: "Instagram", short: "IG" }, whatsapp: { label: "WhatsApp", short: "WA" }, facebook: { label: "Facebook", short: "FB" },
 };
 
 const names = ["Mariana López", "Carlos Mendoza", "Sofía Ramírez", "Diego Torres", "Ana Paula Ruiz", "Jorge Salas", "Renata Flores", "Luis Herrera", "Valeria Cruz", "Miguel Ángel", "Camila Ortiz", "Raúl Navarro", "Fernanda Gil", "Hugo Paredes", "Natalia Soto", "Iván Reyes", "Daniela Mora", "Emilio Vega", "Paola Luna", "Óscar Ríos", "Lucía Campos", "Adrián Silva", "Mónica Lara", "Marco Núñez", "Andrea León"];
-const snippets = ["Sí me interesa una videollamada.", "¿Cuánto cuesta la asesoría?", "Hola, vi su publicación y quiero información.", "Todavía no estoy seguro.", "¿Cómo funciona la asesoría?", "Escríbeme la próxima semana.", "¿Tienen disponibilidad este jueves?", "Quisiera conocer los planes para mi empresa."];
+const conversationScripts: { summary: string; messages: ChatMessage[] }[] = [
+  { summary: "Quiere centralizar la atención de su equipo y aceptó una videollamada de demostración.", messages: [
+    { body: "Hola, vi su publicación y quiero información.", from: "contact", time: "10:12" },
+    { body: "¡Hola! Soy Nia, asistente virtual de Áurea Labs. Con gusto te ayudo. ¿Qué te gustaría mejorar en tu proceso de atención?", from: "ai", time: "10:15" },
+    { body: "Quiero responder más rápido y no perder clientes.", from: "contact", time: "10:18" },
+    { body: "Tiene sentido. Podemos centralizar tus canales y responder al instante. ¿Cuántas conversaciones reciben aproximadamente al mes?", from: "ai", time: "10:21" },
+    { body: "Unas 800 entre Instagram y WhatsApp.", from: "contact", time: "10:24" },
+    { body: "Con ese volumen, una demostración te ayudaría a ver el flujo completo. ¿Te gustaría agendar una videollamada de 20 minutos?", from: "ai", time: "10:26" },
+    { body: "Sí me interesa una videollamada.", from: "contact", time: "10:28" },
+  ]},
+  { summary: "Está evaluando el plan profesional y solicitó conocer el precio de la asesoría.", messages: [
+    { body: "Hola, somos un equipo de ventas de cinco personas.", from: "contact", time: "10:31" },
+    { body: "¡Hola! Podemos ayudarles a ordenar sus conversaciones. ¿Qué canal concentra más consultas?", from: "ai", time: "10:34" },
+    { body: "Principalmente WhatsApp. ¿Cuánto cuesta la asesoría?", from: "contact", time: "10:41" },
+  ]},
+  { summary: "Contacto nuevo que llegó desde una publicación; todavía no se ha calificado su necesidad.", messages: [
+    { body: "Hola, vi su publicación y quiero información.", from: "contact", time: "11:42" },
+  ]},
+  { summary: "Conoce la propuesta, pero aún está evaluando si es el momento adecuado para avanzar.", messages: [
+    { body: "¿La plataforma también reúne comentarios de Facebook?", from: "contact", time: "16:02" },
+    { body: "Sí, reúne Messenger y comentarios en la misma bandeja. ¿Actualmente quién responde esos mensajes?", from: "ai", time: "16:05" },
+    { body: "Los repartimos entre dos personas. Todavía no estoy seguro.", from: "contact", time: "16:11" },
+  ]},
+  { summary: "Busca entender el proceso de implementación antes de presentar la solución a su equipo.", messages: [
+    { body: "Me interesa automatizar las preguntas repetidas.", from: "contact", time: "12:04" },
+    { body: "Podemos configurar respuestas breves y transferir los casos importantes. ¿Cómo atienden hoy esas preguntas?", from: "ai", time: "12:08" },
+    { body: "Las respondemos manualmente. ¿Cómo funciona la asesoría?", from: "contact", time: "12:13" },
+  ]},
+  { summary: "Mostró interés inicial y pidió retomar la conversación la próxima semana.", messages: [
+    { body: "Quiero verlo con mi socio antes de decidir.", from: "contact", time: "09:17" },
+    { body: "Claro, puedo dejar programado un seguimiento sin compromiso. ¿Qué día te funciona mejor?", from: "ai", time: "09:20" },
+    { body: "Escríbeme la próxima semana.", from: "contact", time: "09:24" },
+  ]},
+  { summary: "Tiene intención alta y está buscando un horario disponible para una demostración.", messages: [
+    { body: "Ya revisé los planes y me interesa el profesional.", from: "contact", time: "14:06" },
+    { body: "Excelente. Podemos revisar el flujo de tu empresa en una llamada breve. ¿Qué día te gustaría?", from: "ai", time: "14:09" },
+    { body: "¿Tienen disponibilidad este jueves?", from: "contact", time: "14:12" },
+  ]},
+  { summary: "Solicita comparar planes para elegir una opción adecuada al tamaño de su empresa.", messages: [
+    { body: "Tenemos Instagram, Facebook y WhatsApp por separado.", from: "contact", time: "17:22" },
+    { body: "NexoIA puede reunir los tres canales. ¿Cuántas personas atienden actualmente?", from: "ai", time: "17:25" },
+    { body: "Somos ocho. Quisiera conocer los planes para mi empresa.", from: "contact", time: "17:29" },
+  ]},
+];
 const colors = ["#f4b8a4", "#a9c8ff", "#b8ddc9", "#e9c5ff", "#ffd5a1", "#b8d8ee"];
-const initialConversations: Conversation[] = names.map((name, i) => ({
-  id: i + 1, name, initials: name.split(" ").slice(0, 2).map(n => n[0]).join(""), channel: (["instagram", "whatsapp", "facebook"] as Channel[])[i % 3],
-  temperature: (["Caliente", "Tibio", "Frío", "Tibio"] as Temperature[])[i % 4], last: snippets[i % snippets.length], time: i < 3 ? `${9 + i}:4${i}` : i < 9 ? "Ayer" : `${2 + (i % 5)} jul`, unread: i % 5 === 0 ? 2 : i % 4 === 0 ? 1 : 0, ai: i % 5 !== 3, score: 92 - ((i * 7) % 58), interest: ["Demo del producto", "Plan profesional", "Automatización de ventas", "Información general"][i % 4], stage: ["Oportunidad", "Calificado", "Nuevo", "Seguimiento"][i % 4], color: colors[i % colors.length],
-}));
+const initialConversations: Conversation[] = names.map((name, i) => {
+  const script = conversationScripts[i % conversationScripts.length];
+  return {
+    id: i + 1, name, initials: name.split(" ").slice(0, 2).map(n => n[0]).join(""), channel: (["instagram", "whatsapp", "facebook"] as Channel[])[i % 3],
+    temperature: (["Caliente", "Tibio", "Frío", "Tibio"] as Temperature[])[i % 4], last: script.messages.at(-1)?.body ?? "Conversación nueva", time: i < 3 ? `${9 + i}:4${i}` : i < 9 ? "Ayer" : `${2 + (i % 5)} jul`, unread: i % 5 === 0 ? 2 : i % 4 === 0 ? 1 : 0, ai: i % 5 !== 3, score: 92 - ((i * 7) % 58), interest: ["Demo del producto", "Plan profesional", "Automatización de ventas", "Información general"][i % 4], stage: ["Oportunidad", "Calificado", "Nuevo", "Seguimiento"][i % 4], color: colors[i % colors.length], summary: script.summary, messages: script.messages.map(message => ({ ...message })),
+  };
+});
 
 const nav: { label: View; icon: string }[] = [
   { label: "Resumen", icon: "⌂" }, { label: "Conversaciones", icon: "◉" }, { label: "Contactos", icon: "♙" }, { label: "Automatizaciones", icon: "↯" },
@@ -87,13 +134,20 @@ function Dashboard({ onNavigate, appointments }: { onNavigate: (v: View) => void
 }
 
 function Inbox({ conversations, setConversations, active, setActiveId, notify, onAppointment }: { conversations: Conversation[]; setConversations: (v: Conversation[]) => void; active: Conversation; setActiveId: (id:number)=>void; notify:(s:string)=>void; onAppointment:()=>void }) {
-  const [filter, setFilter] = useState("Todos"); const [query, setQuery] = useState(""); const [messages, setMessages] = useState(["Hola, vi su publicación y quiero información.", "¡Hola! Soy Nia, asistente virtual de Áurea Labs. Con gusto te ayudo. ¿Qué te gustaría mejorar en tu proceso de atención?", "Quiero responder más rápido y no perder clientes.", "Tiene sentido. Podemos centralizar tus canales y responder al instante. ¿Cuántas conversaciones reciben aproximadamente al mes?"]);
+  const [filter, setFilter] = useState("Todos"); const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const filtered = useMemo(() => conversations.filter(c => c.name.toLowerCase().includes(query.toLowerCase()) && (filter === "Todos" || CHANNELS[c.channel].label === filter || c.temperature === filter)), [conversations, query, filter]);
   const update = (partial: Partial<Conversation>) => setConversations(conversations.map(c => c.id === active.id ? {...c, ...partial} : c));
-  const send = () => { if (!draft.trim()) return; setMessages([...messages, draft]); setDraft(""); notify("Mensaje simulado enviado"); };
+  const send = () => {
+    const body = draft.trim();
+    if (!body) return;
+    const now = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
+    update({ messages: [...active.messages, { body, from: "human", time: now }], last: body, time: "Ahora", unread: 0 });
+    setDraft("");
+    notify("Mensaje enviado y conversación actualizada");
+  };
   return <div className="inbox"><section className="thread-list"><div className="inbox-title"><div><h2>Conversaciones</h2><span>6 sin leer</span></div><button>＋</button></div><div className="search"><span>⌕</span><input placeholder="Buscar conversaciones…" value={query} onChange={e=>setQuery(e.target.value)} /></div><div className="filters">{["Todos","Instagram","WhatsApp","Facebook","Frío","Tibio","Caliente"].map(f=><button className={filter===f?"active":""} onClick={()=>setFilter(f)} key={f}>{f}</button>)}</div><div className="threads">{filtered.length ? filtered.map(c=><button key={c.id} className={active.id===c.id?"active":""} onClick={()=>setActiveId(c.id)}><span className="avatar" style={{background:c.color}}>{c.initials}</span><span className="thread-copy"><b>{c.name}<i className={`channel ${c.channel}`}>{CHANNELS[c.channel].short}</i></b><small>{c.last}</small><em className={`temp ${c.temperature.toLowerCase()}`}>● {c.temperature}</em>{c.ai && <em className="ai-label">✦ IA activa</em>}</span><span className="thread-meta"><time>{c.time}</time>{c.unread>0&&<b>{c.unread}</b>}</span></button>) : <div className="empty"><b>Sin resultados</b><span>Prueba con otro filtro.</span></div>}</div></section>
-    <section className="chat"><div className="chat-head"><span className="avatar" style={{background:active.color}}>{active.initials}</span><div><b>{active.name}</b><span><i className="online" /> En línea · {CHANNELS[active.channel].label}</span></div><div className="chat-actions"><button onClick={()=>update({ai:!active.ai})}>✦ {active.ai?"Pausar IA":"Activar IA"}</button><button onClick={()=>notify("Conversación transferida a Laura")}>⇄ Transferir</button><button>•••</button></div></div><div className="chat-note"><span>✦</span><p><b>Resumen de IA</b> Busca responder más rápido y centralizar canales. Tiene un equipo de 4 personas y recibe alrededor de 800 mensajes al mes.</p></div><div className="messages"><div className="date-chip">HOY</div>{messages.map((m,i)=><div className={`bubble-row ${i%2?"out":"in"}`} key={i}>{i%2===0&&<span className="avatar tiny" style={{background:active.color}}>{active.initials}</span>}<div className="bubble">{i%2===1&&<small>✦ Nia · IA</small>}<p>{m}</p><time>{`10:${12+i*3}`} {i%2?"✓✓":""}</time></div></div>)}{active.ai&&<div className="typing"><i/><i/><i/><span>Nia está escribiendo</span></div>}</div><div className="quick-replies"><button onClick={()=>setDraft("¿Te gustaría agendar una videollamada de 20 minutos?")}>Agendar videollamada</button><button onClick={()=>setDraft("Te comparto nuestros planes disponibles.")}>Compartir planes</button><button onClick={()=>setDraft("¿Hay algo más en lo que pueda ayudarte?")}>Cerrar conversación</button></div><div className="composer"><button>＋</button><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Escribe un mensaje…" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}/><button>☺</button><button className="send" onClick={send}>➤</button><small>Enter para enviar · Respuesta humana</small></div></section>
+    <section className="chat"><div className="chat-head"><span className="avatar" style={{background:active.color}}>{active.initials}</span><div><b>{active.name}</b><span><i className="online" /> En línea · {CHANNELS[active.channel].label}</span></div><div className="chat-actions"><button onClick={()=>update({ai:!active.ai})}>✦ {active.ai?"Pausar IA":"Activar IA"}</button><button onClick={()=>notify("Conversación transferida a Laura")}>⇄ Transferir</button><button>•••</button></div></div><div className="chat-note"><span>✦</span><p><b>Resumen de IA</b> {active.summary}</p></div><div className="messages"><div className="date-chip">HOY</div>{active.messages.map((message,i)=><div className={`bubble-row ${message.from === "contact" ? "in" : "out"}`} key={`${active.id}-${i}`}>{message.from === "contact"&&<span className="avatar tiny" style={{background:active.color}}>{active.initials}</span>}<div className="bubble">{message.from === "ai"&&<small>✦ Nia · IA</small>}{message.from === "human"&&<small>Laura · Agente</small>}<p>{message.body}</p><time>{message.time} {message.from !== "contact"?"✓✓":""}</time></div></div>)}{active.ai&&active.messages.at(-1)?.from === "contact"&&<div className="typing"><i/><i/><i/><span>Nia está escribiendo</span></div>}</div><div className="quick-replies"><button onClick={()=>setDraft("¿Te gustaría agendar una videollamada de 20 minutos?")}>Agendar videollamada</button><button onClick={()=>setDraft("Te comparto nuestros planes disponibles.")}>Compartir planes</button><button onClick={()=>setDraft("¿Hay algo más en lo que pueda ayudarte?")}>Cerrar conversación</button></div><div className="composer"><button>＋</button><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Escribe un mensaje…" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}/><button>☺</button><button className="send" onClick={send}>➤</button><small>Enter para enviar · Respuesta humana</small></div></section>
     <aside className="contact-panel"><div className="contact-hero"><span className="avatar large" style={{background:active.color}}>{active.initials}</span><h3>{active.name}</h3><span><i className={`channel ${active.channel}`}>{CHANNELS[active.channel].short}</i> {CHANNELS[active.channel].label}</span></div><div className="score"><div><span>Puntuación del lead</span><b>{active.score}<small>/100</small></b></div><div className="score-track"><i style={{width:`${active.score}%`}}/></div><p>Alta intención de compra</p></div><PanelBlock title="Clasificación"><div className="temperature-select">{(["Frío","Tibio","Caliente"] as Temperature[]).map(t=><button className={active.temperature===t?`active ${t.toLowerCase()}`:""} onClick={()=>update({temperature:t})} key={t}>● {t}</button>)}</div></PanelBlock><PanelBlock title="Detalles"><Detail label="Interés detectado" value={active.interest}/><Detail label="Etapa comercial" value={active.stage}/><Detail label="Último contacto" value="Hoy, 10:21"/><Detail label="Próxima acción" value="Enviar propuesta"/></PanelBlock><PanelBlock title="Etiquetas"><div className="tags"><span>Plan Pro</span><span>+ Equipo</span><button>＋</button></div></PanelBlock><PanelBlock title="Notas"><textarea placeholder="Agregar una nota interna…"/><button className="link" onClick={()=>notify("Nota guardada")}>Guardar nota</button></PanelBlock><button className="appointment" onClick={onAppointment}>□ Agendar videollamada</button></aside>
   </div>;
 }
