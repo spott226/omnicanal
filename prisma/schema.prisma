@@ -1,0 +1,263 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+enum Role { SUPERADMIN ORG_ADMIN SUPERVISOR AGENT }
+enum ChannelType { INSTAGRAM_DIRECT INSTAGRAM_COMMENT WHATSAPP FACEBOOK_MESSENGER FACEBOOK_COMMENT }
+enum LeadTemperature { COLD WARM HOT }
+enum Direction { INBOUND OUTBOUND }
+
+model Organization {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  createdAt DateTime @default(now())
+  memberships Membership[]
+  channels ChannelConnection[]
+  contacts Contact[]
+  conversations Conversation[]
+  prompts Prompt[]
+  automations Automation[]
+  appointments Appointment[]
+  reminders Reminder[]
+  aiConfigs OrganizationAIConfig[]
+  aiUsage AIUsageRecord[]
+  auditLogs AuditLog[]
+}
+
+model User {
+  id String @id @default(uuid()) @db.Uuid
+  email String @unique
+  name String
+  passwordHash String?
+  memberships Membership[]
+  auditLogs AuditLog[] @relation("AuditActor")
+}
+
+model Membership {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  userId String @db.Uuid
+  role Role
+  organization Organization @relation(fields:[organizationId], references:[id])
+  user User @relation(fields:[userId], references:[id])
+  @@unique([organizationId,userId])
+  @@index([organizationId,role])
+}
+
+model ChannelConnection {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  type ChannelType
+  externalAccountId String?
+  displayName String
+  status String @default("DEMO")
+  encryptedCredentials Json?
+  organization Organization @relation(fields:[organizationId], references:[id])
+  conversations Conversation[]
+  @@unique([organizationId,type,externalAccountId])
+  @@index([organizationId,status])
+}
+
+model Contact {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name String
+  email String?
+  phone String?
+  externalProfiles Json?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields:[organizationId], references:[id])
+  conversations Conversation[]
+  tags ContactTag[]
+  scores LeadScore[]
+  appointments Appointment[]
+  @@index([organizationId,name])
+}
+
+model Conversation {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  contactId String @db.Uuid
+  channelConnectionId String @db.Uuid
+  assignedUserId String? @db.Uuid
+  status String @default("OPEN")
+  aiEnabled Boolean @default(true)
+  stage String @default("NEW")
+  lastMessageAt DateTime @default(now())
+  organization Organization @relation(fields:[organizationId], references:[id])
+  contact Contact @relation(fields:[contactId], references:[id])
+  channel ChannelConnection @relation(fields:[channelConnectionId], references:[id])
+  messages Message[]
+  aiUsage AIUsageRecord[]
+  @@index([organizationId,status,lastMessageAt])
+}
+
+model Message {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  conversationId String @db.Uuid
+  channelConnectionId String @db.Uuid
+  externalMessageId String?
+  direction Direction
+  authorType String
+  body String
+  payload Json?
+  createdAt DateTime @default(now())
+  conversation Conversation @relation(fields:[conversationId], references:[id])
+  @@unique([organizationId,channelConnectionId,externalMessageId])
+  @@index([organizationId,conversationId,createdAt])
+}
+
+model Tag {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name String
+  color String
+  contacts ContactTag[]
+  @@unique([organizationId,name])
+}
+
+model ContactTag {
+  organizationId String @db.Uuid
+  contactId String @db.Uuid
+  tagId String @db.Uuid
+  contact Contact @relation(fields:[contactId], references:[id])
+  tag Tag @relation(fields:[tagId], references:[id])
+  @@id([organizationId,contactId,tagId])
+}
+
+model LeadScore {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  contactId String @db.Uuid
+  score Int
+  temperature LeadTemperature
+  reasons Json
+  createdAt DateTime @default(now())
+  contact Contact @relation(fields:[contactId], references:[id])
+  @@index([organizationId,contactId,createdAt])
+}
+
+model Prompt {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name String
+  organization Organization @relation(fields:[organizationId], references:[id])
+  versions PromptVersion[]
+  @@index([organizationId])
+}
+
+model PromptVersion {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  promptId String @db.Uuid
+  version Int
+  content Json
+  publishedAt DateTime?
+  createdAt DateTime @default(now())
+  prompt Prompt @relation(fields:[promptId], references:[id])
+  @@unique([organizationId,promptId,version])
+}
+
+model Automation {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  name String
+  channel ChannelType?
+  trigger Json
+  conditions Json
+  actions Json
+  active Boolean @default(false)
+  organization Organization @relation(fields:[organizationId], references:[id])
+  executions AutomationExecution[]
+  @@index([organizationId,active])
+}
+
+model AutomationExecution {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  automationId String @db.Uuid
+  eventKey String
+  status String
+  result Json?
+  executedAt DateTime @default(now())
+  automation Automation @relation(fields:[automationId], references:[id])
+  @@unique([organizationId,eventKey])
+}
+
+model Appointment {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  contactId String @db.Uuid
+  startsAt DateTime
+  endsAt DateTime
+  meetingUrl String?
+  status String @default("SCHEDULED")
+  organization Organization @relation(fields:[organizationId], references:[id])
+  contact Contact @relation(fields:[contactId], references:[id])
+  @@index([organizationId,startsAt])
+}
+
+model Reminder {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  conversationId String @db.Uuid
+  templateKey String
+  scheduledAt DateTime
+  status String @default("PENDING")
+  organization Organization @relation(fields:[organizationId], references:[id])
+  @@index([organizationId,status,scheduledAt])
+}
+
+model AIProvider {
+  id String @id @default(uuid()) @db.Uuid
+  key String @unique
+  name String
+  baseUrl String?
+  encryptedApiKey Json?
+  active Boolean @default(false)
+  organizationConfigs OrganizationAIConfig[]
+}
+
+model OrganizationAIConfig {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  providerId String @db.Uuid
+  model String
+  fallbackProviderId String? @db.Uuid
+  monthlyBudget Decimal? @db.Decimal(12,2)
+  maxOutputTokens Int @default(350)
+  organization Organization @relation(fields:[organizationId], references:[id])
+  provider AIProvider @relation(fields:[providerId], references:[id])
+  @@unique([organizationId,providerId])
+}
+
+model AIUsageRecord {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String @db.Uuid
+  conversationId String? @db.Uuid
+  providerKey String
+  model String
+  inputTokens Int
+  outputTokens Int
+  estimatedCost Decimal @db.Decimal(12,6)
+  latencyMs Int
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields:[organizationId], references:[id])
+  conversation Conversation? @relation(fields:[conversationId], references:[id])
+  @@index([organizationId,createdAt])
+}
+
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String? @db.Uuid
+  actorUserId String @db.Uuid
+  action String
+  entityType String
+  entityId String?
+  changes Json?
+  ipHash String?
+  createdAt DateTime @default(now())
+  organization Organization? @relation(fields:[organizationId], references:[id])
+  actor User @relation("AuditActor",fields:[actorUserId], references:[id])
+  @@index([organizationId,createdAt])
+}
