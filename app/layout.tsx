@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NexoIA — Atención que convierte",
-  description: "Centraliza tus conversaciones, califica prospectos y agenda citas con IA.",
+  title: "next.io by Mercadia — AI customer ops",
+  description: "Centraliza conversaciones, califica prospectos y agenda citas con IA.",
   icons: { icon: "/favicon.svg" },
   openGraph: {
-    title: "NexoIA — Cada conversación, una oportunidad",
+    title: "next.io by Mercadia — AI customer ops",
     description: "Atención omnicanal y automatización comercial con inteligencia artificial.",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "NexoIA — Cada conversación, una oportunidad" }],
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "next.io by Mercadia" }],
   },
   twitter: { card: "summary_large_image", images: ["/og.png"] },
 };

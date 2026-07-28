@@ -10,25 +10,58 @@ async function render() {
   return worker.fetch(new Request("http://localhost/", { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("renderiza el acceso demo de NexoIA", async () => {
+test("renderiza el acceso conectado de next.io", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>NexoIA — Atención que convierte<\/title>/i);
-  assert.match(html, /Inicia sesión en NexoIA/);
-  assert.match(html, /demo@nexoia\.mx/);
-  assert.match(html, /Acceso de demostración/);
+  assert.match(html, /<title>next\.io by Mercadia — AI customer ops<\/title>/i);
+  assert.match(html, /Inicia sesión en next\.io/);
+  assert.doesNotMatch(html, /demo@nexoia\.local|NexoDemo2026!/);
+  assert.match(html, /autoComplete="off"/);
+  assert.match(html, /Acceso conectado/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
+});
+
+test("el inicio de sesión no permite entrar mediante un fallback local", async () => {
+  const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /await api\.login\(email,password\); setLoggedIn\(true\)/);
+  assert.match(app, /await api\.logout\(\)/);
+  assert.match(app, /Cerrar sesión/);
+  assert.doesNotMatch(app, /setRuntimeMode\("demo"\)/);
+  assert.doesNotMatch(app, /useState\("demo@nexoia\.local"\)|useState\("NexoDemo2026!"\)/);
+  assert.doesNotMatch(app, /esta cuenta conserva la demo local/);
 });
 
 test("incluye los flujos críticos de la preview", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
-  for (const label of ["Resumen", "Conversaciones", "Contactos", "Automatizaciones", "Agente de IA", "Laboratorio", "Estadísticas", "Canales", "Configuración"]) assert.match(app, new RegExp(label));
+  for (const label of ["Resumen", "Conversaciones", "Contactos", "Knowledge Base", "Automatizaciones", "Agente de IA", "Laboratorio", "Estadísticas", "Canales", "Configuración"]) assert.match(app, new RegExp(label));
   assert.match(app, /initialConversations/);
   assert.match(app, /Proveedor simulado/);
   assert.match(app, /Agendar videollamada/);
   assert.match(app, /Modo demostración/);
+});
+
+test("incluye UI y cliente API para Knowledge Base", async () => {
+  const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
+  const apiClient = await readFile(new URL("../app/api-client.ts", import.meta.url), "utf8");
+  for (const label of ["FAQs", "Productos", "Servicios", "Promociones", "Horarios", "Políticas"]) assert.match(app, new RegExp(label));
+  assert.match(app, /knowledgeConfig/);
+  assert.match(apiClient, /knowledgeList/);
+  assert.match(apiClient, /knowledgeCreate/);
+  assert.match(apiClient, /knowledgeUpdate/);
+  assert.match(apiClient, /knowledgeDelete/);
+});
+
+test("incluye facturación, trial de 7 días y preparación de Stripe", async () => {
+  const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
+  const apiClient = await readFile(new URL("../app/api-client.ts", import.meta.url), "utf8");
+  assert.match(app, /PRUEBA ACTIVA DE 7 DÍAS/);
+  assert.match(app, /Stripe Checkout/);
+  assert.match(app, /billingCheckout/);
+  assert.match(apiClient, /billingPlans/);
+  assert.match(apiClient, /billingSubscription/);
+  assert.match(apiClient, /billingUsage/);
 });
 
 test("mantiene métricas y embudo matemáticamente consistentes", () => {
@@ -62,8 +95,8 @@ test("incluye prompt, laboratorio contextual y automatización VIP", async () =>
   assert.ok(DEMO_AUTOMATIONS.some(rule => rule.trigger.includes("VIP") && rule.action === "Enviar mensaje privado"));
 });
 
-test("el restablecimiento demo solicita confirmación", async () => {
+test("la sesión visual permanece conectada a datos persistentes", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /window\.confirm\("¿Restablecer todos los datos de demostración\?/);
-  assert.match(app, /Datos de demostración restablecidos/);
+  assert.match(app, /Datos persistentes · API/);
+  assert.doesNotMatch(app, /Restablecer todos los datos de demostración/);
 });

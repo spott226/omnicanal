@@ -38,8 +38,15 @@ yarn-error.log*
 
 # typescript
 next-env.d.ts
+*.tsbuildinfo
 /dist/
+/apps/api/dist/
 /.wrangler/
 .devserver*.log
 /outputs/
 /work/
+/.local/
+.devserver*.err
+.devserver*.out
+.api-*.log
+.api*.log

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import NexoApp from "./NexoApp";
 
 export const metadata: Metadata = {
-  title: "NexoIA — Atención que convierte",
+  title: "next.io by Mercadia — AI customer ops",
   description: "Bandeja omnicanal y automatización comercial con inteligencia artificial.",
 };
 

@@ -1,263 +1,697 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+generator client {
+  provider = "prisma-client-js"
+}
 
-enum Role { SUPERADMIN ORG_ADMIN SUPERVISOR AGENT }
-enum ChannelType { INSTAGRAM_DIRECT INSTAGRAM_COMMENT WHATSAPP FACEBOOK_MESSENGER FACEBOOK_COMMENT }
-enum LeadTemperature { COLD WARM HOT }
-enum Direction { INBOUND OUTBOUND }
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum OrganizationMode {
+  DEMO
+  LIVE
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum Role {
+  SUPER_ADMIN
+  ORGANIZATION_ADMIN
+  SUPERVISOR
+  AGENT
+}
+
+enum Plan {
+  DEMO
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  INCOMPLETE
+}
+
+enum Channel {
+  INSTAGRAM
+  WHATSAPP
+  FACEBOOK
+}
+
+enum LeadTemperature {
+  COLD
+  WARM
+  HOT
+}
+
+enum ConsentStatus {
+  UNKNOWN
+  OPTED_IN
+  OPTED_OUT
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum AIStatus {
+  ACTIVE
+  PAUSED
+  TRANSFERRED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum SenderType {
+  CONTACT
+  AI
+  USER
+  SYSTEM
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum PromptVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum ReminderType {
+  FOLLOW_UP
+  APPOINTMENT
+  CUSTOM
+}
+
+enum TriggerType {
+  KEYWORD
+  LEAD_SCORE
+  APPOINTMENT
+  NO_RESPONSE
+  MANUAL
+}
+
+enum AIUsageStatus {
+  SUCCEEDED
+  FAILED
+}
+
+enum KnowledgeType {
+  FAQ
+  PRODUCT
+  SERVICE
+  PROMOTION
+  POLICY
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum PolicyType {
+  TERMS
+  PRIVACY
+  RETURNS
+  SHIPPING
+  CANCELLATION
+  CUSTOM
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
 
 model Organization {
-  id String @id @default(uuid()) @db.Uuid
-  name String
-  createdAt DateTime @default(now())
-  memberships Membership[]
-  channels ChannelConnection[]
-  contacts Contact[]
-  conversations Conversation[]
-  prompts Prompt[]
-  automations Automation[]
-  appointments Appointment[]
-  reminders Reminder[]
-  aiConfigs OrganizationAIConfig[]
-  aiUsage AIUsageRecord[]
-  auditLogs AuditLog[]
+  id                  String              @id @default(uuid()) @db.Uuid
+  name                String
+  slug                String              @unique
+  status              OrganizationStatus  @default(ACTIVE)
+  mode                OrganizationMode    @default(LIVE)
+  plan                Plan                @default(STARTER)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  memberships         Membership[]
+  contacts            Contact[]
+  conversations       Conversation[]
+  messages            Message[]
+  tags                Tag[]
+  contactTags         ContactTag[]
+  notes               Note[]
+  prompts             Prompt[]
+  promptVersions      PromptVersion[]
+  appointments        Appointment[]
+  reminders           Reminder[]
+  automations         Automation[]
+  aiUsage             AIUsageRecord[]
+  auditLogs           AuditLog[]
+  sessions            Session[]
+  knowledgeCategories KnowledgeCategory[]
+  faqs                Faq[]
+  products            Product[]
+  services            Service[]
+  promotions          Promotion[]
+  businessSchedules   BusinessSchedule[]
+  scheduleEntries     ScheduleEntry[]
+  policies            Policy[]
+  subscriptions       Subscription[]
+  billingEvents       BillingEvent[]
 }
 
 model User {
-  id String @id @default(uuid()) @db.Uuid
-  email String @unique
-  name String
-  passwordHash String?
-  memberships Membership[]
-  auditLogs AuditLog[] @relation("AuditActor")
+  id                    String               @id @default(uuid()) @db.Uuid
+  name                  String
+  email                 String               @unique
+  passwordHash          String
+  status                UserStatus           @default(ACTIVE)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  memberships           Membership[]
+  assignedConversations Conversation[]       @relation("AssignedUser")
+  notes                 Note[]
+  promptVersions        PromptVersion[]      @relation("PromptVersionCreator")
+  auditLogs             AuditLog[]
+  sessions              Session[]
+  passwordResetTokens   PasswordResetToken[]
 }
 
 model Membership {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  userId String @db.Uuid
-  role Role
-  organization Organization @relation(fields:[organizationId], references:[id])
-  user User @relation(fields:[userId], references:[id])
-  @@unique([organizationId,userId])
-  @@index([organizationId,role])
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  userId         String       @db.Uuid
+  role           Role
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
 }
 
-model ChannelConnection {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  type ChannelType
-  externalAccountId String?
-  displayName String
-  status String @default("DEMO")
-  encryptedCredentials Json?
-  organization Organization @relation(fields:[organizationId], references:[id])
-  conversations Conversation[]
-  @@unique([organizationId,type,externalAccountId])
-  @@index([organizationId,status])
+model Session {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  organizationId String?       @db.Uuid
+  tokenHash      String        @unique
+  expiresAt      DateTime
+  createdAt      DateTime      @default(now())
+  lastSeenAt     DateTime      @default(now())
+  revokedAt      DateTime?
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([organizationId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 model Contact {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  name String
-  email String?
-  phone String?
-  externalProfiles Json?
-  createdAt DateTime @default(now())
-  organization Organization @relation(fields:[organizationId], references:[id])
-  conversations Conversation[]
-  tags ContactTag[]
-  scores LeadScore[]
-  appointments Appointment[]
-  @@index([organizationId,name])
+  id                String          @id @default(uuid()) @db.Uuid
+  organizationId    String          @db.Uuid
+  firstName         String
+  lastName          String?
+  email             String?
+  phone             String?
+  instagramUsername String?
+  facebookId        String?
+  whatsappId        String?
+  leadTemperature   LeadTemperature @default(COLD)
+  leadScore         Int             @default(0)
+  consentStatus     ConsentStatus   @default(UNKNOWN)
+  lastInteractionAt DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+  tags              ContactTag[]
+  notes             Note[]
+  appointments      Appointment[]
+  reminders         Reminder[]
+
+  @@index([organizationId, firstName, lastName])
+  @@index([organizationId, leadTemperature, leadScore])
+  @@index([organizationId, lastInteractionAt])
 }
 
 model Conversation {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  contactId String @db.Uuid
-  channelConnectionId String @db.Uuid
-  assignedUserId String? @db.Uuid
-  status String @default("OPEN")
-  aiEnabled Boolean @default(true)
-  stage String @default("NEW")
-  lastMessageAt DateTime @default(now())
-  organization Organization @relation(fields:[organizationId], references:[id])
-  contact Contact @relation(fields:[contactId], references:[id])
-  channel ChannelConnection @relation(fields:[channelConnectionId], references:[id])
-  messages Message[]
-  aiUsage AIUsageRecord[]
-  @@index([organizationId,status,lastMessageAt])
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  contactId      String             @db.Uuid
+  channel        Channel
+  status         ConversationStatus @default(OPEN)
+  aiStatus       AIStatus           @default(ACTIVE)
+  assignedUserId String?            @db.Uuid
+  summary        String?
+  lastMessageAt  DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact        Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedUser   User?              @relation("AssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages       Message[]
+  appointments   Appointment[]
+  reminders      Reminder[]
+  aiUsage        AIUsageRecord[]
+
+  @@index([organizationId, status, lastMessageAt])
+  @@index([organizationId, assignedUserId])
+  @@index([organizationId, contactId])
 }
 
 model Message {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  conversationId String @db.Uuid
-  channelConnectionId String @db.Uuid
+  id                String           @id @default(uuid()) @db.Uuid
+  organizationId    String           @db.Uuid
+  conversationId    String           @db.Uuid
+  direction         MessageDirection
+  senderType        SenderType
+  content           String           @db.Text
   externalMessageId String?
-  direction Direction
-  authorType String
-  body String
-  payload Json?
-  createdAt DateTime @default(now())
-  conversation Conversation @relation(fields:[conversationId], references:[id])
-  @@unique([organizationId,channelConnectionId,externalMessageId])
-  @@index([organizationId,conversationId,createdAt])
+  status            MessageStatus    @default(SENT)
+  createdAt         DateTime         @default(now())
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, externalMessageId])
+  @@index([organizationId, conversationId, createdAt])
 }
 
 model Tag {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  name String
-  color String
-  contacts ContactTag[]
-  @@unique([organizationId,name])
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  name           String
+  color          String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contacts       ContactTag[]
+
+  @@unique([organizationId, name])
 }
 
 model ContactTag {
-  organizationId String @db.Uuid
-  contactId String @db.Uuid
-  tagId String @db.Uuid
-  contact Contact @relation(fields:[contactId], references:[id])
-  tag Tag @relation(fields:[tagId], references:[id])
-  @@id([organizationId,contactId,tagId])
+  organizationId String       @db.Uuid
+  contactId      String       @db.Uuid
+  tagId          String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact        Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag            Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, contactId, tagId])
+  @@index([organizationId, tagId])
 }
 
-model LeadScore {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  contactId String @db.Uuid
-  score Int
-  temperature LeadTemperature
-  reasons Json
-  createdAt DateTime @default(now())
-  contact Contact @relation(fields:[contactId], references:[id])
-  @@index([organizationId,contactId,createdAt])
+model Note {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  contactId      String       @db.Uuid
+  userId         String       @db.Uuid
+  content        String       @db.Text
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact        Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, contactId, createdAt])
 }
 
 model Prompt {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  name String
-  organization Organization @relation(fields:[organizationId], references:[id])
-  versions PromptVersion[]
-  @@index([organizationId])
+  id                 String          @id @default(uuid()) @db.Uuid
+  organizationId     String          @db.Uuid
+  agentName          String          @default("Nia")
+  active             Boolean         @default(true)
+  publishedVersionId String?         @unique @db.Uuid
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  organization       Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  versions           PromptVersion[] @relation("PromptVersions")
+  publishedVersion   PromptVersion?  @relation("PublishedPromptVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, active])
 }
 
 model PromptVersion {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  promptId String @db.Uuid
-  version Int
-  content Json
-  publishedAt DateTime?
-  createdAt DateTime @default(now())
-  prompt Prompt @relation(fields:[promptId], references:[id])
-  @@unique([organizationId,promptId,version])
-}
+  id             String              @id @default(uuid()) @db.Uuid
+  organizationId String              @db.Uuid
+  promptId       String              @db.Uuid
+  versionNumber  Int
+  content        String              @db.Text
+  status         PromptVersionStatus @default(DRAFT)
+  createdBy      String              @db.Uuid
+  createdAt      DateTime            @default(now())
+  publishedAt    DateTime?
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  prompt         Prompt              @relation("PromptVersions", fields: [promptId], references: [id], onDelete: Cascade)
+  creator        User                @relation("PromptVersionCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  publishedFor   Prompt?             @relation("PublishedPromptVersion")
 
-model Automation {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  name String
-  channel ChannelType?
-  trigger Json
-  conditions Json
-  actions Json
-  active Boolean @default(false)
-  organization Organization @relation(fields:[organizationId], references:[id])
-  executions AutomationExecution[]
-  @@index([organizationId,active])
-}
-
-model AutomationExecution {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  automationId String @db.Uuid
-  eventKey String
-  status String
-  result Json?
-  executedAt DateTime @default(now())
-  automation Automation @relation(fields:[automationId], references:[id])
-  @@unique([organizationId,eventKey])
+  @@unique([organizationId, promptId, versionNumber])
+  @@index([organizationId, status])
 }
 
 model Appointment {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  contactId String @db.Uuid
-  startsAt DateTime
-  endsAt DateTime
-  meetingUrl String?
-  status String @default("SCHEDULED")
-  organization Organization @relation(fields:[organizationId], references:[id])
-  contact Contact @relation(fields:[contactId], references:[id])
-  @@index([organizationId,startsAt])
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @db.Uuid
+  contactId      String            @db.Uuid
+  conversationId String?           @db.Uuid
+  scheduledAt    DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  meetingUrl     String?
+  createdAt      DateTime          @default(now())
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact        Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation   Conversation?     @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, scheduledAt])
+  @@index([organizationId, status])
 }
 
 model Reminder {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  conversationId String @db.Uuid
-  templateKey String
-  scheduledAt DateTime
-  status String @default("PENDING")
-  organization Organization @relation(fields:[organizationId], references:[id])
-  @@index([organizationId,status,scheduledAt])
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  contactId      String         @db.Uuid
+  conversationId String?        @db.Uuid
+  scheduledAt    DateTime
+  status         ReminderStatus @default(PENDING)
+  type           ReminderType
+  createdAt      DateTime       @default(now())
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact        Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation   Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, scheduledAt])
 }
 
-model AIProvider {
-  id String @id @default(uuid()) @db.Uuid
-  key String @unique
-  name String
-  baseUrl String?
-  encryptedApiKey Json?
-  active Boolean @default(false)
-  organizationConfigs OrganizationAIConfig[]
-}
+model Automation {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  name           String
+  channel        Channel?
+  triggerType    TriggerType
+  configuration  Json
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-model OrganizationAIConfig {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  providerId String @db.Uuid
-  model String
-  fallbackProviderId String? @db.Uuid
-  monthlyBudget Decimal? @db.Decimal(12,2)
-  maxOutputTokens Int @default(350)
-  organization Organization @relation(fields:[organizationId], references:[id])
-  provider AIProvider @relation(fields:[providerId], references:[id])
-  @@unique([organizationId,providerId])
+  @@index([organizationId, active])
 }
 
 model AIUsageRecord {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  conversationId String? @db.Uuid
-  providerKey String
-  model String
-  inputTokens Int
-  outputTokens Int
-  estimatedCost Decimal @db.Decimal(12,6)
-  latencyMs Int
-  createdAt DateTime @default(now())
-  organization Organization @relation(fields:[organizationId], references:[id])
-  conversation Conversation? @relation(fields:[conversationId], references:[id])
-  @@index([organizationId,createdAt])
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  conversationId String?       @db.Uuid
+  provider       String
+  model          String
+  inputTokens    Int
+  outputTokens   Int
+  estimatedCost  Decimal       @db.Decimal(12, 6)
+  latencyMs      Int
+  status         AIUsageStatus
+  createdAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
 }
 
 model AuditLog {
-  id String @id @default(uuid()) @db.Uuid
-  organizationId String? @db.Uuid
-  actorUserId String @db.Uuid
-  action String
-  entityType String
-  entityId String?
-  changes Json?
-  ipHash String?
-  createdAt DateTime @default(now())
-  organization Organization? @relation(fields:[organizationId], references:[id])
-  actor User @relation("AuditActor",fields:[actorUserId], references:[id])
-  @@index([organizationId,createdAt])
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  userId         String       @db.Uuid
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId])
+}
+
+model PlanPrice {
+  id                   String             @id @default(uuid()) @db.Uuid
+  plan                 Plan
+  interval             BillingInterval
+  currency             String             @default("MXN")
+  amountCents          Int
+  monthlyContactsLimit Int
+  seatsLimit           Int
+  stripePriceId        String?
+  active               Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  subscriptions        Subscription[]
+
+  @@unique([plan, interval])
+  @@index([active, plan])
+}
+
+model Subscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  organizationId         String             @db.Uuid
+  planPriceId            String             @db.Uuid
+  status                 SubscriptionStatus @default(TRIALING)
+  trialStartedAt         DateTime           @default(now())
+  trialEndsAt            DateTime
+  currentPeriodStartsAt  DateTime           @default(now())
+  currentPeriodEndsAt    DateTime
+  cancelAtPeriodEnd      Boolean            @default(false)
+  stripeCustomerId       String?
+  stripeSubscriptionId   String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  organization           Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  planPrice              PlanPrice          @relation(fields: [planPriceId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status])
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+}
+
+model BillingEvent {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  type           String
+  provider       String       @default("STRIPE")
+  providerEventId String?
+  payload        Json?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@unique([provider, providerEventId])
+}
+
+model KnowledgeCategory {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  type           KnowledgeType
+  name           String
+  slug           String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  faqs           Faq[]
+  products       Product[]
+  services       Service[]
+  policies       Policy[]
+
+  @@unique([organizationId, type, slug])
+  @@index([organizationId, type, deletedAt])
+}
+
+model Faq {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  categoryId     String?            @db.Uuid
+  question       String
+  answer         String             @db.Text
+  sortOrder      Int                @default(0)
+  active         Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, deletedAt, sortOrder])
+  @@index([organizationId, categoryId])
+}
+
+model Product {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  categoryId     String?            @db.Uuid
+  sku            String
+  name           String
+  description    String?            @db.Text
+  price          Decimal?           @db.Decimal(12, 2)
+  currency       String             @default("MXN")
+  active         Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, sku])
+  @@index([organizationId, deletedAt, name])
+  @@index([organizationId, categoryId])
+}
+
+model Service {
+  id              String             @id @default(uuid()) @db.Uuid
+  organizationId  String             @db.Uuid
+  categoryId      String?            @db.Uuid
+  code            String
+  name            String
+  description     String?            @db.Text
+  price           Decimal?           @db.Decimal(12, 2)
+  currency        String             @default("MXN")
+  durationMinutes Int?
+  active          Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category        KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, deletedAt, name])
+  @@index([organizationId, categoryId])
+}
+
+model Promotion {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  code           String
+  name           String
+  description    String?      @db.Text
+  discountType   DiscountType
+  discountValue  Decimal      @db.Decimal(12, 2)
+  startsAt       DateTime
+  endsAt         DateTime
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, deletedAt, startsAt, endsAt])
+}
+
+model BusinessSchedule {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
+  name           String
+  timezone       String
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entries        ScheduleEntry[]
+
+  @@index([organizationId, deletedAt, name])
+}
+
+model ScheduleEntry {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @db.Uuid
+  scheduleId     String           @db.Uuid
+  dayOfWeek      DayOfWeek
+  opensAt        String?
+  closesAt       String?
+  closed         Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  schedule       BusinessSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, scheduleId, dayOfWeek])
+  @@index([organizationId, deletedAt])
+}
+
+model Policy {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @db.Uuid
+  categoryId     String?            @db.Uuid
+  type           PolicyType
+  title          String
+  content        String             @db.Text
+  version        Int                @default(1)
+  active         Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, type, version])
+  @@index([organizationId, deletedAt, title])
+  @@index([organizationId, categoryId])
 }

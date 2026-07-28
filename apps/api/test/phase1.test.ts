@@ -1,0 +1,87 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { hash } from "bcryptjs";
+import { JwtService } from "@nestjs/jwt";
+import { AuthService } from "../src/auth.service";
+import { validateEnvironment } from "../src/config";
+import { HealthController } from "../src/health.controller";
+import { ResourceService, safePercentage } from "../src/resource.service";
+import { TenantGuard } from "../src/security";
+import { roleAllows, type AuthPrincipal } from "../../../packages/shared/src/index";
+
+const principalA: AuthPrincipal = { userId: "user-a", sessionId: "session-a", organizationId: "org-a", role: "ORGANIZATION_ADMIN", email: "a@nexoia.local", name: "Admin A" };
+
+test("valida variables obligatorias y rechaza secretos débiles", () => {
+  assert.throws(() => validateEnvironment({ DATABASE_URL: "postgresql://x", REDIS_URL: "redis://x", JWT_SECRET: "short" }));
+  const env = validateEnvironment({ DATABASE_URL: "postgresql://nexoia:nexoia@localhost:5432/nexoia", REDIS_URL: "redis://localhost:6379", JWT_SECRET: "x".repeat(32), SESSION_SECRET: "y".repeat(32), APP_ENCRYPTION_KEY: "z".repeat(32), FRONTEND_URL: "http://localhost:3000", BACKEND_URL: "http://localhost:3001", CORS_ORIGIN: "http://localhost:3000" });
+  assert.equal(env.PORT, 3001);
+});
+
+test("login correcto crea sesión y login incorrecto falla", async () => {
+  const passwordHash = await hash("NexoDemo2026!", 4);
+  const fake: any = { user: { findUnique: async ({ where }: any) => where.email === "demo@nexoia.local" ? { id: "u1", email: where.email, name: "Laura", status: "ACTIVE", passwordHash, memberships: [{ role: "ORGANIZATION_ADMIN", organizationId: "o1", organization: { id: "o1", slug: "aurea-labs-demo", status: "ACTIVE" } }] } : null }, session: { create: async ({ data }: any) => data } };
+  const config: any = { getOrThrow: (key: string) => key === "JWT_SECRET" ? "x".repeat(32) : "http://localhost:3000", get: () => "test" };
+  const service = new AuthService(fake, new JwtService(), config);
+  const cookies: string[] = []; const response: any = { cookie: (name: string) => cookies.push(name) };
+  const result = await service.login({ email: "demo@nexoia.local", password: "NexoDemo2026!", organizationSlug: "aurea-labs-demo" }, response);
+  assert.equal(result.role, "ORGANIZATION_ADMIN"); assert.deepEqual(cookies, ["nexoia_session", "nexoia_csrf"]);
+  await assert.rejects(() => service.login({ email: "demo@nexoia.local", password: "incorrecta" }, response));
+});
+
+test("rutas de tenant exigen organización seleccionada", () => {
+  const guard = new TenantGuard();
+  const context = (principal: unknown) => ({ switchToHttp: () => ({ getRequest: () => ({ principal }) }) }) as any;
+  assert.throws(() => guard.canActivate(context(undefined)));
+  assert.throws(() => guard.canActivate(context({ ...principalA, role: "SUPER_ADMIN", organizationId: null })));
+  assert.equal(guard.canActivate(context(principalA)), true);
+});
+
+test("roles tienen permisos distintos en backend", () => {
+  assert.equal(roleAllows("ORGANIZATION_ADMIN", "prompt:write"), true);
+  assert.equal(roleAllows("AGENT", "prompt:write"), false);
+  assert.equal(roleAllows("SUPERVISOR", "analytics:read"), true);
+});
+
+test("un usuario A no puede leer ni actualizar recursos de B modificando ids", async () => {
+  const fake: any = {
+    contact: { findFirst: async ({ where }: any) => where.id === "contact-b" && where.organizationId === "org-b" ? { id: "contact-b" } : null, update: async () => { throw new Error("no debe ejecutarse"); } },
+    conversation: { findFirst: async ({ where }: any) => where.id === "conversation-b" && where.organizationId === "org-b" ? { id: "conversation-b" } : null },
+  };
+  const service = new ResourceService(fake);
+  await assert.rejects(() => service.updateContact(principalA, "contact-b", { firstName: "Ataque" }));
+  await assert.rejects(() => service.conversation(principalA, "conversation-b"));
+  await assert.rejects(() => service.createNote(principalA, { contactId: "contact-b", content: "Ataque" }));
+  await assert.rejects(() => service.createAppointment(principalA, { contactId: "contact-b", conversationId: "conversation-b", scheduledAt: new Date().toISOString() }));
+});
+
+test("CRUD permitido siempre conserva organizationId de la sesión", async () => {
+  let created: any; const fake: any = { contact: { create: async ({ data }: any) => (created = data), findFirst: async ({ where }: any) => where.organizationId === "org-a" ? { id: where.id } : null, update: async ({ data }: any) => data, delete: async () => ({}) } };
+  const service = new ResourceService(fake);
+  await service.createContact(principalA, { firstName: "Mariana", leadScore: 80 });
+  assert.equal(created.organizationId, "org-a");
+  assert.equal((await service.updateContact(principalA, "contact-a", { firstName: "Mariana L." })).firstName, "Mariana L.");
+  assert.deepEqual(await service.deleteContact(principalA, "contact-a"), { ok: true });
+});
+
+test("cálculos de dashboard no generan porcentajes negativos", () => {
+  assert.equal(safePercentage(12, 347), 3.5);
+  assert.equal(safePercentage(-5, 100), 0);
+  assert.equal(safePercentage(5, 0), 0);
+});
+
+test("health check reporta PostgreSQL conectado", async () => {
+  const controller = new HealthController({ $queryRaw: async () => [{ ok: 1 }] } as any);
+  assert.equal((await controller.health()).database, "connected");
+});
+
+test("migración y seed demo son reproducibles y protegidos", () => {
+  const migration = readFileSync("prisma/migrations/20260721000100_phase1_production/migration.sql", "utf8");
+  const seed = readFileSync("prisma/seed.ts", "utf8");
+  const reset = readFileSync("prisma/reset-demo.ts", "utf8");
+  assert.match(migration, /CREATE TABLE "Organization"/);
+  assert.match(seed, /DEMO_CONTACT_COUNT = 25/);
+  assert.match(seed, /demo@nexoia\.local/);
+  assert.match(reset, /organization\.mode !== "DEMO"/);
+});
