@@ -35,7 +35,7 @@ test("el inicio de sesión no permite entrar mediante un fallback local", async 
 
 test("incluye los flujos críticos de la preview", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
-  for (const label of ["Resumen", "Conversaciones", "Contactos", "Knowledge Base", "Automatizaciones", "Agente de IA", "Laboratorio", "Estadísticas", "Canales", "Configuración"]) assert.match(app, new RegExp(label));
+  for (const label of ["Inicio", "Conversaciones", "Contactos", "Entrenar IA", "Base de conocimiento", "Productos y servicios", "Conexiones", "Equipo", "Plan y facturación", "Configuración"]) assert.match(app, new RegExp(label));
   assert.match(app, /initialConversations/);
   assert.match(app, /Proveedor simulado/);
   assert.match(app, /Agendar videollamada/);

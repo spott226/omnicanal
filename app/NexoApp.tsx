@@ -6,11 +6,13 @@ import { api, type ApiConversation, type ApiDashboard, type ApiMessage, type Bil
 
 type Channel = "instagram" | "whatsapp" | "facebook";
 type Temperature = "Frío" | "Tibio" | "Caliente";
-type View = "Resumen" | "Conversaciones" | "Contactos" | "Knowledge Base" | "Automatizaciones" | "Agente de IA" | "Laboratorio" | "Estadísticas" | "Canales" | "Configuración" | "Superadmin";
+type View = "Inicio" | "Conversaciones" | "Contactos" | "Entrenar IA" | "Base de conocimiento" | "Productos y servicios" | "Conexiones" | "Equipo" | "Plan y facturación" | "Configuración" | "Superadmin";
 type ChatMessage = { body: string; from: "contact" | "ai" | "human"; time: string };
 type Conversation = { id: string | number; organizationId: string; name: string; initials: string; channel: Channel; temperature: Temperature; last: string; time: string; unread: number; ai: boolean; transferred: boolean; hasAppointment: boolean; score: number; interest: string; stage: string; color: string; summary: string; tags: string[]; note: string; reminder: string; messages: ChatMessage[] };
 type AutomationRule = { name: string; channel: Channel; trigger: string; action: string; runs: number; active: boolean };
 type DashboardMetrics = Partial<ApiDashboard>;
+const settingsTabs = ["Organización","Equipo y roles","Notificaciones","Horarios","Seguridad","Facturación"] as const;
+type SettingsTab = (typeof settingsTabs)[number];
 type KnowledgeConfig = {
   label: string;
   titleKey: string;
@@ -109,13 +111,13 @@ const initialConversations: Conversation[] = names.map((name, i) => {
 });
 
 const nav: { label: View; icon: string }[] = [
-  { label: "Resumen", icon: "⌂" }, { label: "Conversaciones", icon: "◉" }, { label: "Contactos", icon: "♙" }, { label: "Knowledge Base", icon: "▣" }, { label: "Automatizaciones", icon: "↯" },
-  { label: "Agente de IA", icon: "✦" }, { label: "Laboratorio", icon: "◇" }, { label: "Estadísticas", icon: "↗" }, { label: "Canales", icon: "◎" }, { label: "Configuración", icon: "⚙" },
+  { label: "Inicio", icon: "⌂" }, { label: "Conversaciones", icon: "◉" }, { label: "Contactos", icon: "♙" }, { label: "Entrenar IA", icon: "✦" }, { label: "Base de conocimiento", icon: "▣" },
+  { label: "Productos y servicios", icon: "□" }, { label: "Conexiones", icon: "◎" }, { label: "Equipo", icon: "♟" }, { label: "Plan y facturación", icon: "◈" }, { label: "Configuración", icon: "⚙" },
 ];
 
 export default function NexoApp() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [view, setView] = useState<View>("Resumen");
+  const [view, setView] = useState<View>("Inicio");
   const [conversations, setConversations] = useState(initialConversations);
   const [activeId, setActiveId] = useState<string | number>(1);
   const [toast, setToast] = useState("");
@@ -166,7 +168,7 @@ export default function NexoApp() {
     try { await api.logout(); }
     catch { /* La sesión pudo expirar antes de cerrar. */ }
     setLoggedIn(false);
-    setView("Resumen");
+    setView("Inicio");
     setConversations(initialConversations);
     setActiveId(1);
     setDashboardMetrics(null);
@@ -191,16 +193,16 @@ export default function NexoApp() {
     <main className="main">
       <header className="topbar"><button className="mobile-menu" onClick={() => setSidebar(!sidebar)}>☰</button><div><h1>{view}</h1><p>{subtitle(view)}</p></div><div className="top-actions"><span className="status"><i /> Sistema operativo</span><button className="icon-button" onClick={() => notify("No tienes notificaciones nuevas")}>♢</button><button className="avatar">LN</button></div></header>
       <div className="content">
-        {view === "Resumen" && <Dashboard onNavigate={go} appointments={appointments} metrics={dashboardMetrics} />}
+        {view === "Inicio" && <Dashboard onNavigate={go} appointments={appointments} metrics={dashboardMetrics} />}
         {view === "Conversaciones" && <Inbox conversations={conversations} setConversations={setConversations} active={active} setActiveId={setActiveId} notify={notify} onAppointment={() => setModal(true)} />}
         {view === "Contactos" && <Contacts conversations={conversations} onOpen={(id) => { setActiveId(id); go("Conversaciones"); }} />}
-        {view === "Knowledge Base" && <KnowledgeBase notify={notify} />}
-        {view === "Automatizaciones" && <Automations notify={notify} />}
-        {view === "Agente de IA" && <AgentSettings notify={notify} onTest={()=>go("Laboratorio")} />}
-        {view === "Laboratorio" && <Laboratory notify={notify} />}
-        {view === "Estadísticas" && <Statistics />}
-        {view === "Canales" && <Channels notify={notify} />}
-        {view === "Configuración" && <Settings notify={notify} onSuper={() => go("Superadmin")} />}
+        {view === "Entrenar IA" && <AgentSettings notify={notify} />}
+        {view === "Base de conocimiento" && <KnowledgeBase notify={notify} />}
+        {view === "Productos y servicios" && <KnowledgeBase notify={notify} initialKind="products" />}
+        {view === "Conexiones" && <Channels notify={notify} />}
+        {view === "Equipo" && <Settings notify={notify} onSuper={() => go("Superadmin")} initialTab="Equipo y roles" />}
+        {view === "Plan y facturación" && <Settings notify={notify} onSuper={() => go("Superadmin")} initialTab="Facturación" />}
+        {view === "Configuración" && <Settings notify={notify} onSuper={() => go("Superadmin")} initialTab="Organización" />}
         {view === "Superadmin" && <Superadmin notify={notify} />}
       </div>
     </main>
@@ -284,8 +286,8 @@ const knowledgeKinds = Object.keys(knowledgeConfig) as KnowledgeKind[];
 const recordValue = (record: KnowledgeRecord, ...keys: string[]) => keys.map(key => record[key]).find(value => typeof value === "string" && value.trim()) as string | undefined;
 const moneyValue = (record: KnowledgeRecord) => typeof record.price === "number" ? `${record.currency ?? "MXN"} ${record.price.toLocaleString("es-MX")}` : "";
 
-function KnowledgeBase({notify}:{notify:(s:string)=>void}) {
-  const [kind,setKind]=useState<KnowledgeKind>("faqs");
+function KnowledgeBase({notify,initialKind="faqs"}:{notify:(s:string)=>void;initialKind?:KnowledgeKind}) {
+  const [kind,setKind]=useState<KnowledgeKind>(initialKind);
   const [search,setSearch]=useState("");
   const [items,setItems]=useState<KnowledgeRecord[]>([]);
   const [total,setTotal]=useState(0);
@@ -306,12 +308,12 @@ function Automations({notify}:{notify:(s:string)=>void}) {
   return <section className="page-stack"><div className="section-heading"><div><h2>Automatizaciones</h2><p>Convierte interacciones en acciones sin trabajo manual.</p></div><button className="primary" onClick={()=>setCreating(true)}>＋ Nueva automatización</button></div>{creating&&<div className="card automation-builder"><h3>Nueva regla por palabra clave</h3><div className="form-grid"><label>Nombre<input defaultValue="Solicitud desde comentario"/></label><label>Canal<select><option>Instagram</option><option>Facebook</option><option>WhatsApp</option></select></label><label>Si el mensaje contiene<input defaultValue="DEMO"/></label><label>Entonces<select><option>Enviar mensaje privado</option><option>Agregar etiqueta</option><option>Avisar a un asesor</option></select></label></div><div className="button-row"><button onClick={()=>setCreating(false)}>Cancelar</button><button className="primary" onClick={()=>{setRules([{name:"Solicitud desde comentario",channel:"instagram",trigger:'Comentario contiene “DEMO”',action:"Iniciar calificación",runs:0,active:true},...rules]);setCreating(false);notify("Automatización creada y activada")}}>Crear automatización</button></div></div>}<div className="automation-grid">{rules.map((rule,i)=><article className="card automation-card" key={`${rule.name}-${i}`}><div className="automation-top"><i className={`channel ${rule.channel}`}>{CHANNELS[rule.channel].short}</i><button aria-label={`${rule.active?"Desactivar":"Activar"} ${rule.name}`} className={`switch ${rule.active?"on":""}`} onClick={()=>{setRules(rules.map((item,j)=>j===i?{...item,active:!item.active}:item));notify(rule.active?"Automatización desactivada":"Automatización activada")}}><span/></button></div><h3>{rule.name}</h3><p><span>CUANDO</span>{rule.trigger}</p><p><span>ENTONCES</span>{rule.action}</p><div className="automation-footer"><span><b>{rule.runs}</b> ejecuciones</span><span>{rule.runs?"Última: hoy":"Sin ejecuciones"}</span></div><div className="automation-actions"><button onClick={()=>{const name=window.prompt("Editar nombre",rule.name);if(name?.trim())setRules(rules.map((item,j)=>j===i?{...item,name:name.trim()}:item))}}>Editar</button><button onClick={()=>{setRules(rules.map((item,j)=>j===i?{...item,runs:item.runs+1}:item));notify(`Prueba ejecutada: ${rule.action}`)}}>▶ Probar</button></div></article>)}</div></section>
 }
 
-function AgentSettings({notify,onTest}:{notify:(s:string)=>void;onTest:()=>void}) {
+function AgentSettings({notify,onTest}:{notify:(s:string)=>void;onTest?:()=>void}) {
   const defaultPrompt=`Eres Nia, asistente comercial de Áurea Labs. Tu objetivo es entender la necesidad del prospecto, calificar su interés y facilitar una videollamada cuando exista intención suficiente.\n\nResponde de forma cercana y profesional, con máximo tres oraciones. Haz una sola pregunta por mensaje. No insistas si la persona no está interesada. Transfiere casos sensibles o urgentes a una persona. En temas de salud, no diagnostiques ni recomiendes tratamientos.`;
   const [prompt,setPrompt]=useState(defaultPrompt);
   const [status,setStatus]=useState<"Borrador"|"Publicado">("Publicado");
   const tokens=Math.max(1,Math.ceil(prompt.length/4));
-  return <section className="page-stack"><div className="section-heading"><div><h2>Agente de IA</h2><p>Una sola instrucción controla la personalidad, objetivo y límites de Nia.</p></div><div className="button-row"><button onClick={()=>{setStatus("Borrador");notify("Borrador guardado")}}>Guardar borrador</button><button onClick={onTest}>Probar prompt</button><button className="primary" onClick={()=>{setStatus("Publicado");notify("Versión 4 publicada")}}>Publicar</button></div></div><div className="two-col"><div className="card form-card"><div className="agent-profile"><span className="agent-avatar">✦</span><div><h3>Nia</h3><span><i/> {status} · {tokens} tokens aprox.</span></div></div><label>Nombre del agente<input defaultValue="Nia"/></label><label>Prompt general<textarea className="prompt prompt-general" value={prompt} onChange={event=>{setPrompt(event.target.value);setStatus("Borrador")}} aria-label="Prompt general"/></label><div className="prompt-meta"><span>{prompt.length} caracteres</span><span>{tokens} tokens aproximados</span></div></div><aside className="page-stack"><div className="card version-list"><CardTitle title="Historial de versiones" note="Cambios recientes"/>{[["v4",status,"Ahora"],["v3","Publicado","Hoy, 09:42"],["v2","Mayor calidez","14 jul, 16:20"],["v1","Versión inicial","2 jul, 11:05"]].map(v=><div key={v[0]}><b>{v[0]}</b><p><strong>{v[1]}</strong><span>{v[2]}</span></p><button onClick={()=>notify(`${v[0]} seleccionada`)}>Ver</button></div>)}</div><div className="safety-card"><span>⚕</span><div><b>Protección para temas sensibles</b><p>Las reglas de seguridad se aplican también en modo demostración.</p></div></div></aside></div></section>
+  return <section className="page-stack"><div className="section-heading"><div><h2>Entrenar IA</h2><p>Configura cómo debe responder la IA de este negocio.</p></div><div className="button-row"><button onClick={()=>{setStatus("Borrador");notify("Borrador guardado")}}>Guardar borrador</button><button onClick={()=>onTest?onTest():notify("Simulador de IA queda para la fase de proveedor mock centralizado")}>Probar prompt</button><button className="primary" onClick={()=>{setStatus("Publicado");notify("Versión 4 publicada")}}>Publicar</button></div></div><div className="two-col"><div className="card form-card"><div className="agent-profile"><span className="agent-avatar">✦</span><div><h3>Nia</h3><span><i/> {status} · {tokens} tokens aprox.</span></div></div><label>Nombre del agente<input defaultValue="Nia"/></label><label>Prompt general<textarea className="prompt prompt-general" value={prompt} onChange={event=>{setPrompt(event.target.value);setStatus("Borrador")}} aria-label="Prompt general"/></label><div className="prompt-meta"><span>{prompt.length} caracteres</span><span>{tokens} tokens aproximados</span></div></div><aside className="page-stack"><div className="card version-list"><CardTitle title="Historial de versiones" note="Cambios recientes"/>{[["v4",status,"Ahora"],["v3","Publicado","Hoy, 09:42"],["v2","Mayor calidez","14 jul, 16:20"],["v1","Versión inicial","2 jul, 11:05"]].map(v=><div key={v[0]}><b>{v[0]}</b><p><strong>{v[1]}</strong><span>{v[2]}</span></p><button onClick={()=>notify(`${v[0]} seleccionada`)}>Ver</button></div>)}</div><div className="safety-card"><span>⚕</span><div><b>Protección para temas sensibles</b><p>Las reglas de seguridad se aplican también en modo demostración.</p></div></div></aside></div></section>
 }
 
 function Laboratory({notify}:{notify:(s:string)=>void}) {
@@ -343,12 +345,10 @@ function Channels({notify}:{notify:(s:string)=>void}){
   return <section className="page-stack"><div className="section-heading"><div><h2>Canales</h2><p>Administra los puntos de contacto de tu organización.</p></div><span className="demo-banner"><i/> Modo demostración · Sin cuentas reales conectadas</span></div><div className="channel-cards">{(["instagram","whatsapp","facebook"] as Channel[]).map((channel,i)=><article className="card channel-card" key={channel}><div><i className={`channel huge ${channel}`}>{CHANNELS[channel].short}</i><span><h3>{CHANNELS[channel].label}</h3><p>{i===0?"Direct y comentarios":i===1?"WhatsApp Cloud API":"Messenger y comentarios"}</p></span></div><span className="simulated">● Conexión simulada</span><div className="channel-details"><p><span>Cuenta demo</span><b>{i===0?"@aurealabs_demo":i===1?"+52 55 0000 2026":"Áurea Labs Demo"}</b></p><p><span>Última sincronización</span><b>Hoy, 12:42</b></p></div><dl><div><dt>Conversaciones</dt><dd>{CHANNEL_DATA[channel].count}</dd></div><div><dt>Estado demo</dt><dd className={connected[channel]?"positive":""}>{connected[channel]?"Operativo":"Desconectado"}</dd></div></dl><button onClick={()=>notify(`Conexión simulada de ${CHANNELS[channel].label} verificada`)}>Probar conexión</button><button onClick={()=>notify(`${CHANNELS[channel].label}: eventos recientes abiertos (3 eventos demo)`) }>Ver eventos recientes</button><button className="primary" onClick={()=>{setConnected({...connected,[channel]:!connected[channel]});notify(connected[channel]?"Canal demo desconectado":"Canal demo reconectado")}}>{connected[channel]?"Desconectar demo":"Reconectar demo"}</button></article>)}</div><div className="card meta-ready"><span>◎</span><div><h3>Arquitectura preparada para Meta</h3><p>Los adaptadores, webhooks, validación de firma, idempotencia y reintentos están especificados. Ninguna solicitud real se realiza en esta demo.</p></div><button onClick={()=>notify("Documentación de integración disponible en el repositorio")}>Ver documentación →</button></div></section>
 }
 
-function Settings({notify,onSuper}:{notify:(s:string)=>void;onSuper:()=>void}){
-  const tabs=["Organización","Equipo y roles","Notificaciones","Horarios","Seguridad","Facturación"] as const;
-  type SettingsTab=(typeof tabs)[number];
-  const [tab,setTab]=useState<SettingsTab>("Organización");
+function Settings({notify,onSuper,initialTab="Organización"}:{notify:(s:string)=>void;onSuper:()=>void;initialTab?:SettingsTab}){
+  const [tab,setTab]=useState<SettingsTab>(initialTab);
   const save=()=>notify(`${tab}: cambios guardados`);
-  return <section className="page-stack"><div className="section-heading"><div><h2>Configuración</h2><p>Gestiona tu organización, equipo y preferencias.</p></div></div><div className="settings-grid"><div className="card settings-nav">{tabs.map(item=><button className={tab===item?"active":""} onClick={()=>setTab(item)} key={item}>{item}</button>)}</div><div className="card form-card settings-content">
+  return <section className="page-stack"><div className="section-heading"><div><h2>Configuración</h2><p>Gestiona tu organización, equipo y preferencias.</p></div></div><div className="settings-grid"><div className="card settings-nav">{settingsTabs.map(item=><button className={tab===item?"active":""} onClick={()=>setTab(item)} key={item}>{item}</button>)}</div><div className="card form-card settings-content">
     {tab==="Organización"&&<><h3>Información de la organización</h3><div className="org-logo">AL <button>✎</button></div><div className="form-grid"><label>Nombre<input defaultValue="Áurea Labs"/></label><label>Zona horaria<select><option>Ciudad de México (UTC−6)</option></select></label><label>Industria<input defaultValue="Servicios profesionales"/></label><label>Sitio web<input defaultValue="https://aurealabs.demo"/></label></div><label>Descripción<textarea defaultValue="Ayudamos a empresas a mejorar su atención y automatizar procesos comerciales."/></label><div className="button-row end"><button className="primary" onClick={save}>Guardar cambios</button></div><hr/><div className="admin-access"><div><b>Panel privado de plataforma</b><p>Disponible únicamente para superadministradores.</p></div><button onClick={onSuper}>Abrir Superadmin →</button></div></>}
     {tab==="Equipo y roles"&&<><CardTitle title="Equipo y roles" note="4 miembros activos · 1 invitación pendiente" action="＋ Invitar miembro"/><div className="team-list">{[["LN","Leniel","leniel@mercadia.local","Administrador"],["JR","Javier Ruiz","javier@aurealabs.demo","Supervisor"],["AS","Andrea Soto","andrea@aurealabs.demo","Agente"],["MP","Mario Pérez","mario@aurealabs.demo","Agente"]].map(member=><div key={member[2]}><span className="avatar small">{member[0]}</span><p><b>{member[1]}</b><small>{member[2]}</small></p><select defaultValue={member[3]}><option>Administrador</option><option>Supervisor</option><option>Agente</option></select><button onClick={()=>notify(`Opciones de ${member[1]}`)}>•••</button></div>)}</div><div className="button-row"><button className="primary" onClick={save}>Guardar roles</button></div></>}
     {tab==="Notificaciones"&&<><CardTitle title="Notificaciones" note="Elige qué eventos avisan a tu equipo"/><ChannelToggle label="Nuevo prospecto caliente" color="instagram"/><ChannelToggle label="Conversación transferida" color="whatsapp"/><ChannelToggle label="Cita confirmada" color="facebook"/><ChannelToggle label="Canal desconectado" color="instagram"/><div className="form-grid"><label>Resumen por correo<select><option>Diario a las 18:00</option><option>Semanal</option><option>No enviar</option></select></label><label>Correo de avisos<input defaultValue="equipo@aurealabs.demo"/></label></div><div className="button-row"><button className="primary" onClick={save}>Guardar notificaciones</button></div></>}
@@ -382,4 +382,4 @@ function CardTitle({title,note,action}:{title:string;note?:string;action?:string
 function PanelBlock({title,children}:{title:string;children:React.ReactNode}){return <div className="panel-block"><h4>{title}</h4>{children}</div>}
 function Detail({label,value}:{label:string;value:string}){return <div className="detail"><span>{label}</span><b>{value}</b></div>}
 function ChannelToggle({label,color}:{label:string;color:string}){const [on,setOn]=useState(true);return <div className="channel-toggle"><i className={`channel ${color}`}>{color.slice(0,2).toUpperCase()}</i><b>{label}</b><button className={`switch ${on?"on":""}`} onClick={()=>setOn(!on)}><span/></button></div>}
-function subtitle(v:View){return ({Resumen:"El pulso de tu atención, en un solo lugar.",Conversaciones:"Atiende cada canal desde una sola bandeja.",Contactos:"Conoce, califica y acompaña a cada prospecto.","Knowledge Base":"Administra la información que alimentará al equipo y al agente.",Automatizaciones:"Activa respuestas y acciones en el momento correcto.","Agente de IA":"Configura cómo piensa y conversa tu agente.",Laboratorio:"Prueba antes de publicar.",Estadísticas:"Decisiones claras a partir de tus conversaciones.",Canales:"Conecta tus puntos de contacto.",Configuración:"Tu organización, a tu manera.",Superadmin:"Control privado de la plataforma."} as Record<View,string>)[v]}
+function subtitle(v:View){return ({Inicio:"Estado real del negocio, suscripción y operación.",Conversaciones:"Atiende cada canal desde una sola bandeja.",Contactos:"Consulta contactos y conversaciones relacionadas.","Entrenar IA":"Configura cómo debe responder el asistente.","Base de conocimiento":"Administra información útil para la IA.","Productos y servicios":"Mantén precios y servicios disponibles.","Conexiones":"Conecta o simula canales claramente identificados.",Equipo:"Administra el equipo básico.", "Plan y facturación":"Revisa trial, plan, consumo y pagos.", Configuración:"Tu organización, a tu manera.",Superadmin:"Control privado de la plataforma."} as Record<View,string>)[v]}

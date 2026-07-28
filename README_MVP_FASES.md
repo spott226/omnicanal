@@ -51,7 +51,7 @@ Posponer:
 
 ### Fase 0 — Protección y regla del proyecto
 
-Estado: en curso.
+Estado: completada.
 
 Objetivo:
 
@@ -69,6 +69,8 @@ Entregable:
 - commit de protección.
 
 ### Fase 1 — Limpieza de menú y flujo principal
+
+Estado: completada en primer pase.
 
 Objetivo:
 
