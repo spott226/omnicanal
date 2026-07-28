@@ -177,6 +177,8 @@ Validación:
 
 ### Fase 6 — Knowledge Base y productos/servicios MVP
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Mantener CRUD simple.
