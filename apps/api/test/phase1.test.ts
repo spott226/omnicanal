@@ -19,6 +19,15 @@ test("valida variables obligatorias y rechaza secretos débiles", () => {
   assert.equal(env.PORT, 3001);
 });
 
+test("backend bloquea crear contactos cuando el plan ya llego al limite", async () => {
+  const fake: any = {
+    subscription: { findFirst: async () => ({ planPrice: { monthlyContactsLimit: 1 } }) },
+    contact: { count: async () => 1, create: async () => { throw new Error("no debe crear"); } },
+  };
+  const service = new ResourceService(fake);
+  await assert.rejects(() => service.createContact(principalA, { firstName: "Nuevo" }), /limite de contactos/);
+});
+
 test("login correcto crea sesión y login incorrecto falla", async () => {
   const passwordHash = await hash("NexoDemo2026!", 4);
   const fake: any = { user: { findUnique: async ({ where }: any) => where.email === "demo@nexoia.local" ? { id: "u1", email: where.email, name: "Laura", status: "ACTIVE", passwordHash, memberships: [{ role: "ORGANIZATION_ADMIN", organizationId: "o1", organization: { id: "o1", slug: "aurea-labs-demo", status: "ACTIVE" } }] } : null }, session: { create: async ({ data }: any) => data } };

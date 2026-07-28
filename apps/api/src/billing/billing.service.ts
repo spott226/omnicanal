@@ -52,8 +52,51 @@ export class BillingService {
     const organizationId = this.org(principal);
     const subscription = await this.currentSubscription(principal);
     const periodStart = new Date(subscription.currentPeriodStartsAt);
-    const conversations = await this.prisma.conversation.count({ where: { organizationId, createdAt: { gte: periodStart } } });
-    return { conversations, monthlyContactsLimit: subscription.planPrice.monthlyContactsLimit, seatsLimit: subscription.planPrice.seatsLimit, percent: Math.min(100, Math.round((conversations / Math.max(1, subscription.planPrice.monthlyContactsLimit)) * 100)) };
+    const periodEnd = new Date(subscription.currentPeriodEndsAt);
+    const period = { gte: periodStart, lte: periodEnd };
+    const [contacts, seats, conversations, channels, aiResponses, messagesReceived, messagesSent] = await Promise.all([
+      this.prisma.contact.count({ where: { organizationId } }),
+      (this.prisma as any).membership.count({ where: { organizationId } }),
+      this.prisma.conversation.count({ where: { organizationId, createdAt: { gte: periodStart } } }),
+      this.prisma.conversation.groupBy({ by: ["channel"], where: { organizationId }, _count: { _all: true } }),
+      this.prisma.message.count({ where: { organizationId, senderType: "AI", createdAt: period } }),
+      this.prisma.message.count({ where: { organizationId, direction: "INBOUND", createdAt: period } }),
+      this.prisma.message.count({ where: { organizationId, direction: "OUTBOUND", createdAt: period } }),
+    ]);
+    const limits = {
+      contacts: subscription.planPrice.monthlyContactsLimit,
+      seats: subscription.planPrice.seatsLimit,
+      channels: subscription.planPrice.channelsLimit ?? 1,
+      aiResponses: subscription.planPrice.aiResponsesLimit ?? 500,
+    };
+    const usage = { contacts, seats, channels: channels.length, aiResponses, conversations, messagesReceived, messagesSent };
+    return {
+      period: { startsAt: subscription.currentPeriodStartsAt, endsAt: subscription.currentPeriodEndsAt },
+      limits,
+      usage,
+      remaining: {
+        contacts: Math.max(0, limits.contacts - usage.contacts),
+        seats: Math.max(0, limits.seats - usage.seats),
+        channels: Math.max(0, limits.channels - usage.channels),
+        aiResponses: Math.max(0, limits.aiResponses - usage.aiResponses),
+      },
+      percentages: {
+        contacts: this.percent(usage.contacts, limits.contacts),
+        seats: this.percent(usage.seats, limits.seats),
+        channels: this.percent(usage.channels, limits.channels),
+        aiResponses: this.percent(usage.aiResponses, limits.aiResponses),
+      },
+      warnings: {
+        contacts: usage.contacts >= limits.contacts ? "Alcanzaste el límite de contactos del plan." : null,
+        seats: usage.seats >= limits.seats ? "Alcanzaste el límite de usuarios del plan." : null,
+        channels: usage.channels >= limits.channels ? "Alcanzaste el límite de canales del plan." : null,
+        aiResponses: usage.aiResponses >= limits.aiResponses ? "Alcanzaste el límite de respuestas IA del periodo." : null,
+      },
+      conversations: usage.conversations,
+      monthlyContactsLimit: limits.contacts,
+      seatsLimit: limits.seats,
+      percent: this.percent(usage.contacts, limits.contacts),
+    };
   }
 
   private withComputed(subscription: any) {
@@ -61,5 +104,9 @@ export class BillingService {
     const trialEnds = new Date(subscription.trialEndsAt).getTime();
     const trialDaysLeft = Math.max(0, Math.ceil((trialEnds - now) / 86400000));
     return { ...subscription, trialDays: TRIAL_DAYS, trialDaysLeft, trialExpired: trialDaysLeft === 0 && subscription.status === "TRIALING" };
+  }
+
+  private percent(used: number, limit: number) {
+    return Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
   }
 }

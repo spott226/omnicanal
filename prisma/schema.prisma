@@ -497,6 +497,8 @@ model PlanPrice {
   amountCents          Int
   monthlyContactsLimit Int
   seatsLimit           Int
+  channelsLimit        Int                @default(1)
+  aiResponsesLimit     Int                @default(500)
   stripePriceId        String?
   active               Boolean            @default(true)
   createdAt            DateTime           @default(now())

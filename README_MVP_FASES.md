@@ -115,6 +115,8 @@ Validación:
 
 ### Fase 3 — Planes, límites y consumo
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Centralizar límites por plan en backend/base de datos.

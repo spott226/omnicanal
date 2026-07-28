@@ -36,7 +36,7 @@ export class ResourceService {
     const [items, total] = await Promise.all([this.prisma.contact.findMany({ where, ...this.paging(query), orderBy: { lastInteractionAt: query.sort === "asc" ? "asc" : "desc" }, include: { tags: { include: { tag: true } } } }), this.prisma.contact.count({ where })]);
     return { items, total, page: query.page, pageSize: query.pageSize };
   }
-  createContact(principal: AuthPrincipal, dto: CreateContactDto) { return this.prisma.contact.create({ data: { ...dto, organizationId: this.org(principal) } }); }
+  async createContact(principal: AuthPrincipal, dto: CreateContactDto) { const organizationId = this.org(principal); await this.ensureContactLimit(organizationId); return this.prisma.contact.create({ data: { ...dto, organizationId } }); }
   async updateContact(principal: AuthPrincipal, id: string, dto: UpdateContactDto) { const organizationId = this.org(principal); await this.requireContact(organizationId, id); return this.prisma.contact.update({ where: { id }, data: dto }); }
   async deleteContact(principal: AuthPrincipal, id: string) { const organizationId = this.org(principal); await this.requireContact(organizationId, id); await this.prisma.contact.delete({ where: { id } }); return { ok: true }; }
 
@@ -68,4 +68,12 @@ export class ResourceService {
   private async requireContact(organizationId: string, id: string) { const item = await this.prisma.contact.findFirst({ where: { id, organizationId }, select: { id: true } }); if (!item) throw new NotFoundException("Contacto no encontrado"); return item; }
   private async requireConversation(organizationId: string, id: string) { const item = await this.prisma.conversation.findFirst({ where: { id, organizationId }, select: { id: true } }); if (!item) throw new NotFoundException("Conversación no encontrada"); return item; }
   private audit(principal: AuthPrincipal, action: string, entityType: string, entityId: string) { return this.prisma.auditLog.create({ data: { organizationId: this.org(principal), userId: principal.userId, action, entityType, entityId } }); }
+  private async ensureContactLimit(organizationId: string) {
+    const subscriptionApi = (this.prisma as any).subscription;
+    if (!subscriptionApi?.findFirst) return;
+    const subscription = await subscriptionApi.findFirst({ where: { organizationId, status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "INCOMPLETE"] } }, orderBy: { createdAt: "desc" }, include: { planPrice: true } });
+    if (!subscription?.planPrice?.monthlyContactsLimit) return;
+    const used = await this.prisma.contact.count({ where: { organizationId } });
+    if (used >= subscription.planPrice.monthlyContactsLimit) throw new ForbiddenException("Alcanzaste el limite de contactos de tu plan. Cambia de plan para agregar mas.");
+  }
 }

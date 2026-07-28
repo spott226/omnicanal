@@ -43,9 +43,20 @@ export type KnowledgeKind = "faqs" | "products" | "services" | "promotions" | "s
 export type KnowledgeRecord = Record<string, unknown> & { id: string; name?: string; title?: string; question?: string; code?: string; sku?: string; active?: boolean; updatedAt?: string; deletedAt?: string | null };
 export type BillingInterval = "MONTHLY" | "YEARLY";
 export type BillingPlan = "STARTER" | "PRO" | "ENTERPRISE";
-export type PlanPrice = { id: string; plan: BillingPlan; interval: BillingInterval; currency: string; amountCents: number; monthlyContactsLimit: number; seatsLimit: number; active: boolean; stripePriceId?: string | null };
+export type PlanPrice = { id: string; plan: BillingPlan; interval: BillingInterval; currency: string; amountCents: number; monthlyContactsLimit: number; seatsLimit: number; channelsLimit: number; aiResponsesLimit: number; active: boolean; stripePriceId?: string | null };
 export type SubscriptionInfo = { id: string; status: "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELLED" | "INCOMPLETE"; trialEndsAt: string; currentPeriodEndsAt: string; trialDays: number; trialDaysLeft: number; trialExpired: boolean; planPrice: PlanPrice };
-export type BillingUsage = { conversations: number; monthlyContactsLimit: number; seatsLimit: number; percent: number };
+export type BillingUsage = {
+  period: { startsAt: string; endsAt: string };
+  limits: { contacts: number; seats: number; channels: number; aiResponses: number };
+  usage: { contacts: number; seats: number; channels: number; aiResponses: number; conversations: number; messagesReceived: number; messagesSent: number };
+  remaining: { contacts: number; seats: number; channels: number; aiResponses: number };
+  percentages: { contacts: number; seats: number; channels: number; aiResponses: number };
+  warnings: { contacts: string | null; seats: string | null; channels: string | null; aiResponses: string | null };
+  conversations?: number;
+  monthlyContactsLimit?: number;
+  seatsLimit?: number;
+  percent?: number;
+};
 
 function csrfToken() {
   if (typeof document === "undefined") return "";
