@@ -48,6 +48,10 @@ export class ResourceService {
   async conversation(principal: AuthPrincipal, id: string) { const item = await this.prisma.conversation.findFirst({ where: { id, organizationId: this.org(principal), ...(principal.role === "AGENT" ? { assignedUserId: principal.userId } : {}) }, include: { contact: { include: { tags: { include: { tag: true } }, notes: { orderBy: { createdAt: "desc" } } } }, messages: { orderBy: { createdAt: "asc" } }, appointments: true, reminders: true } }); if (!item) throw new NotFoundException("Conversación no encontrada"); return item; }
   async sendMessage(principal: AuthPrincipal, id: string, dto: SendMessageDto) { const conversation = await this.conversation(principal, id); return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => { const message = await tx.message.create({ data: { organizationId: this.org(principal), conversationId: conversation.id, direction: "OUTBOUND", senderType: "USER", content: dto.content, status: "SENT" } }); await tx.conversation.update({ where: { id }, data: { lastMessageAt: message.createdAt } }); return message; }); }
 
+  async takeConversation(principal: AuthPrincipal, id: string) { await this.requireConversationForAction(principal, id); return this.changeConversationControl(principal, id, { aiStatus: "TRANSFERRED", assignedUserId: principal.userId, status: "OPEN" }, "CONVERSATION_TAKEN", `${principal.name} tomo la conversacion. La IA quedo pausada.`); }
+  async returnConversationToAi(principal: AuthPrincipal, id: string) { await this.requireConversationForAction(principal, id); return this.changeConversationControl(principal, id, { aiStatus: "ACTIVE", assignedUserId: null, status: "OPEN" }, "CONVERSATION_RETURNED_TO_AI", `${principal.name} devolvio la conversacion a la IA.`); }
+  async closeConversation(principal: AuthPrincipal, id: string) { await this.requireConversationForAction(principal, id); return this.changeConversationControl(principal, id, { aiStatus: "PAUSED", status: "CLOSED" }, "CONVERSATION_CLOSED", `${principal.name} cerro la conversacion.`); }
+
   async createNote(principal: AuthPrincipal, dto: CreateNoteDto) { const organizationId = this.org(principal); await this.requireContact(organizationId, dto.contactId); const note = await this.prisma.note.create({ data: { organizationId, contactId: dto.contactId, userId: principal.userId, content: dto.content } }); await this.audit(principal, "NOTE_CREATED", "Note", note.id); return note; }
   tags(principal: AuthPrincipal) { return this.prisma.tag.findMany({ where: { organizationId: this.org(principal) }, orderBy: { name: "asc" } }); }
   createTag(principal: AuthPrincipal, dto: CreateTagDto) { return this.prisma.tag.create({ data: { ...dto, organizationId: this.org(principal) } }); }
@@ -68,6 +72,21 @@ export class ResourceService {
   private async requireContact(organizationId: string, id: string) { const item = await this.prisma.contact.findFirst({ where: { id, organizationId }, select: { id: true } }); if (!item) throw new NotFoundException("Contacto no encontrado"); return item; }
   private async requireConversation(organizationId: string, id: string) { const item = await this.prisma.conversation.findFirst({ where: { id, organizationId }, select: { id: true } }); if (!item) throw new NotFoundException("Conversación no encontrada"); return item; }
   private audit(principal: AuthPrincipal, action: string, entityType: string, entityId: string) { return this.prisma.auditLog.create({ data: { organizationId: this.org(principal), userId: principal.userId, action, entityType, entityId } }); }
+  private async requireConversationForAction(principal: AuthPrincipal, id: string) {
+    const organizationId = this.org(principal);
+    const item = await this.prisma.conversation.findFirst({ where: { id, organizationId, ...(principal.role === "AGENT" ? { OR: [{ assignedUserId: principal.userId }, { assignedUserId: null }] } : {}) }, select: { id: true } });
+    if (!item) throw new NotFoundException("Conversacion no encontrada");
+    return item;
+  }
+  private async changeConversationControl(principal: AuthPrincipal, id: string, data: Prisma.ConversationUncheckedUpdateInput, action: string, message: string) {
+    const organizationId = this.org(principal);
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const systemMessage = await tx.message.create({ data: { organizationId, conversationId: id, direction: "OUTBOUND", senderType: "SYSTEM", content: message, status: "SENT" } });
+      await tx.conversation.update({ where: { id }, data: { ...data, lastMessageAt: systemMessage.createdAt } });
+      await tx.auditLog.create({ data: { organizationId, userId: principal.userId, action, entityType: "Conversation", entityId: id, metadata: { message } } });
+      return tx.conversation.findFirstOrThrow({ where: { id, organizationId }, include: { contact: { include: { tags: { include: { tag: true } }, notes: { orderBy: { createdAt: "desc" } } } }, messages: { orderBy: { createdAt: "asc" } }, appointments: true, reminders: true } });
+    });
+  }
   private async ensureContactLimit(organizationId: string) {
     const subscriptionApi = (this.prisma as any).subscription;
     if (!subscriptionApi?.findFirst) return;

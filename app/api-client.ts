@@ -32,7 +32,9 @@ export type ApiConversation = {
   id: string;
   organizationId: string;
   channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK";
+  status: "OPEN" | "CLOSED" | "ARCHIVED";
   aiStatus: "ACTIVE" | "PAUSED" | "TRANSFERRED";
+  assignedUserId?: string | null;
   summary?: string | null;
   lastMessageAt?: string | null;
   contact: ApiContact;
@@ -81,6 +83,9 @@ export const api = {
   conversations: (page = 1) => request<ApiPage<ApiConversation>>(`/conversations?page=${page}`),
   conversation: (id: string) => request<ApiConversation>(`/conversations/${encodeURIComponent(id)}`),
   sendMessage: (id: string, content: string) => request<ApiMessage>(`/conversations/${encodeURIComponent(id)}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  takeConversation: (id: string) => request<ApiConversation>(`/conversations/${encodeURIComponent(id)}/take`, { method: "POST" }),
+  returnConversationToAi: (id: string) => request<ApiConversation>(`/conversations/${encodeURIComponent(id)}/return-to-ai`, { method: "POST" }),
+  closeConversation: (id: string) => request<ApiConversation>(`/conversations/${encodeURIComponent(id)}/close`, { method: "POST" }),
   saveNote: (contactId: string, content: string) => request("/notes", { method: "POST", body: JSON.stringify({ contactId, content }) }),
   savePrompt: (agentName: string, content: string, publish: boolean) => request("/prompts", { method: "POST", body: JSON.stringify({ agentName, content, publish }) }),
   automations: () => request("/automations"),

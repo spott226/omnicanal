@@ -28,6 +28,27 @@ test("backend bloquea crear contactos cuando el plan ya llego al limite", async 
   await assert.rejects(() => service.createContact(principalA, { firstName: "Nuevo" }), /limite de contactos/);
 });
 
+test("conversaciones permiten tomar, devolver a IA y cerrar con auditoria", async () => {
+  const updates: any[] = [];
+  const auditLogs: any[] = [];
+  const messages: any[] = [];
+  const tx: any = {
+    message: { create: async ({ data }: any) => { const row = { id: `msg-${messages.length + 1}`, createdAt: new Date(), ...data }; messages.push(row); return row; } },
+    conversation: { update: async ({ data }: any) => { updates.push(data); return data; }, findFirstOrThrow: async () => ({ id: "conversation-a", organizationId: "org-a", aiStatus: updates.at(-1)?.aiStatus, status: updates.at(-1)?.status, contact: { firstName: "Mariana", leadTemperature: "HOT", leadScore: 90, tags: [] }, messages, appointments: [], reminders: [] }) },
+    auditLog: { create: async ({ data }: any) => { auditLogs.push(data); return data; } },
+  };
+  const fake: any = {
+    conversation: { findFirst: async ({ where }: any) => where.organizationId === "org-a" ? { id: "conversation-a" } : null },
+    $transaction: async (callback: any) => callback(tx),
+  };
+  const service = new ResourceService(fake);
+  assert.equal((await service.takeConversation(principalA, "conversation-a")).aiStatus, "TRANSFERRED");
+  assert.equal((await service.returnConversationToAi(principalA, "conversation-a")).aiStatus, "ACTIVE");
+  assert.equal((await service.closeConversation(principalA, "conversation-a")).status, "CLOSED");
+  assert.deepEqual(auditLogs.map(log => log.action), ["CONVERSATION_TAKEN", "CONVERSATION_RETURNED_TO_AI", "CONVERSATION_CLOSED"]);
+  assert.equal(messages.length, 3);
+});
+
 test("login correcto crea sesión y login incorrecto falla", async () => {
   const passwordHash = await hash("NexoDemo2026!", 4);
   const fake: any = { user: { findUnique: async ({ where }: any) => where.email === "demo@nexoia.local" ? { id: "u1", email: where.email, name: "Laura", status: "ACTIVE", passwordHash, memberships: [{ role: "ORGANIZATION_ADMIN", organizationId: "o1", organization: { id: "o1", slug: "aurea-labs-demo", status: "ACTIVE" } }] } : null }, session: { create: async ({ data }: any) => data } };

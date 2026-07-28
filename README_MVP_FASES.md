@@ -136,6 +136,8 @@ Validación:
 
 ### Fase 4 — Conversaciones MVP
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Bandeja conectada a backend.

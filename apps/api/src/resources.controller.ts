@@ -23,6 +23,9 @@ export class ResourcesController {
   @Get("conversations") @Protected(...ALL) conversations(@CurrentPrincipal() principal: AuthPrincipal, @Query() query: PageQueryDto) { return this.resources.conversations(principal, query); }
   @Get("conversations/:id") @Protected(...ALL) conversation(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.conversation(principal, id); }
   @Post("conversations/:id/messages") @Protected(...ALL) sendMessage(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string, @Body() dto: SendMessageDto) { return this.resources.sendMessage(principal, id, dto); }
+  @Post("conversations/:id/take") @Protected(...ALL) takeConversation(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.takeConversation(principal, id); }
+  @Post("conversations/:id/return-to-ai") @Protected(...ALL) returnConversationToAi(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.returnConversationToAi(principal, id); }
+  @Post("conversations/:id/close") @Protected(...ALL) closeConversation(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.closeConversation(principal, id); }
   @Post("notes") @Protected(...ALL) createNote(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: CreateNoteDto) { return this.resources.createNote(principal, dto); }
 
   @Get("tags") @Protected(...ALL) tags(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.tags(principal); }
