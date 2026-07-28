@@ -62,6 +62,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   login: (email: string, password: string) => request<{ role: string; requiresOrganizationSelection: boolean }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password, organizationSlug: "aurea-labs-demo" }) }),
+  register: (data: { name: string; email: string; password: string; businessName: string; plan: BillingPlan; interval: BillingInterval }) => request<{ role: string; requiresOrganizationSelection: boolean; trialEndsAt: string }>("/auth/register", { method: "POST", body: JSON.stringify(data) }),
   session: () => request<{ userId: string; organizationId: string; role: string }>("/auth/session"),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   dashboard: () => request<ApiDashboard>("/dashboard"),

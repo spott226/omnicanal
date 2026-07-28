@@ -1,4 +1,9 @@
-import { IsEmail, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
+import { IsEmail, IsEnum, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
+
+const REGISTER_PLANS = ["STARTER", "PRO", "ENTERPRISE"] as const;
+const BILLING_INTERVALS = ["MONTHLY", "YEARLY"] as const;
+type RegisterPlan = (typeof REGISTER_PLANS)[number];
+type BillingInterval = (typeof BILLING_INTERVALS)[number];
 
 export class LoginDto {
   @IsEmail() email!: string;
@@ -8,4 +13,13 @@ export class LoginDto {
 
 export class SelectOrganizationDto {
   @IsUUID() organizationId!: string;
+}
+
+export class RegisterDto {
+  @IsString() @MaxLength(120) name!: string;
+  @IsEmail() email!: string;
+  @IsString() @Length(10, 200) password!: string;
+  @IsString() @MaxLength(120) businessName!: string;
+  @IsEnum(REGISTER_PLANS) plan!: RegisterPlan;
+  @IsEnum(BILLING_INTERVALS) interval!: BillingInterval;
 }

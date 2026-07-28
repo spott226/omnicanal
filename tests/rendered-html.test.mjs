@@ -25,7 +25,11 @@ test("renderiza el acceso conectado de next.io", async () => {
 
 test("el inicio de sesión no permite entrar mediante un fallback local", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
+  const apiClient = await readFile(new URL("../app/api-client.ts", import.meta.url), "utf8");
   assert.match(app, /await api\.login\(email,password\); setLoggedIn\(true\)/);
+  assert.match(apiClient, /register:/);
+  assert.match(app, /Crear cuenta/);
+  assert.match(app, /Iniciar prueba gratis/);
   assert.match(app, /await api\.logout\(\)/);
   assert.match(app, /Cerrar sesión/);
   assert.doesNotMatch(app, /setRuntimeMode\("demo"\)/);

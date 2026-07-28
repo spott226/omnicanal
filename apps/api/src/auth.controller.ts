@@ -2,12 +2,13 @@ import { Body, Controller, Get, Inject, Post, Res, UseGuards } from "@nestjs/com
 import type { Response } from "express";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { AuthService } from "./auth.service";
-import { LoginDto, SelectOrganizationDto } from "./auth.dto";
+import { LoginDto, RegisterDto, SelectOrganizationDto } from "./auth.dto";
 import { CsrfGuard, CurrentPrincipal, SessionGuard } from "./security";
 
 @Controller("auth")
 export class AuthController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+  @Post("register") register(@Body() dto: RegisterDto, @Res({ passthrough: true }) response: Response) { return this.auth.register(dto, response); }
   @Post("login") login(@Body() dto: LoginDto, @Res({ passthrough: true }) response: Response) { return this.auth.login(dto, response); }
   @Get("session") @UseGuards(SessionGuard) session(@CurrentPrincipal() principal: AuthPrincipal) { return principal; }
   @Post("select-organization") @UseGuards(SessionGuard, CsrfGuard) select(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: SelectOrganizationDto, @Res({ passthrough: true }) response: Response) { return this.auth.selectOrganization(principal, dto, response); }

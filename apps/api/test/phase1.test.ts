@@ -30,6 +30,38 @@ test("login correcto crea sesión y login incorrecto falla", async () => {
   await assert.rejects(() => service.login({ email: "demo@nexoia.local", password: "incorrecta" }, response));
 });
 
+test("registro crea usuario, negocio, membresía admin y trial con plan elegido", async () => {
+  const created: Record<string, any> = {};
+  const tx: any = {
+    user: { create: async ({ data }: any) => (created.user = { id: "user-new", ...data }) },
+    organization: {
+      findUnique: async () => null,
+      create: async ({ data }: any) => (created.organization = { id: "org-new", ...data }),
+    },
+    membership: { create: async ({ data }: any) => (created.membership = data) },
+    session: { create: async ({ data }: any) => (created.session = data) },
+    subscription: { create: async ({ data }: any) => (created.subscription = data) },
+    billingEvent: { create: async ({ data }: any) => (created.billingEvent = data) },
+    auditLog: { create: async ({ data }: any) => (created.auditLog = data) },
+  };
+  const fake: any = {
+    user: { findUnique: async () => null },
+    planPrice: { findUnique: async ({ where }: any) => ({ id: "price-pro-year", active: true, ...where.plan_interval }) },
+    $transaction: async (callback: any) => callback(tx),
+  };
+  const service = new AuthService(fake, new JwtService(), { getOrThrow: () => "x".repeat(32), get: () => "test" } as any);
+  const cookies: string[] = []; const response: any = { cookie: (name: string) => cookies.push(name) };
+  const result = await service.register({ name: "Leniel", email: "nuevo@mercadia.local", password: "Password2026!", businessName: "Mercadia Demo", plan: "PRO", interval: "YEARLY" }, response);
+  assert.equal(result.role, "ORGANIZATION_ADMIN");
+  assert.equal(created.organization.slug, "mercadia-demo");
+  assert.equal(created.organization.plan, "PRO");
+  assert.equal(created.membership.role, "ORGANIZATION_ADMIN");
+  assert.equal(created.subscription.planPriceId, "price-pro-year");
+  assert.equal(created.subscription.status, "TRIALING");
+  assert.ok(created.subscription.trialEndsAt instanceof Date);
+  assert.deepEqual(cookies, ["nexoia_session", "nexoia_csrf"]);
+});
+
 test("rutas de tenant exigen organización seleccionada", () => {
   const guard = new TenantGuard();
   const context = (principal: unknown) => ({ switchToHttp: () => ({ getRequest: () => ({ principal }) }) }) as any;

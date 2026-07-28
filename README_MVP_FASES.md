@@ -97,6 +97,8 @@ Validación:
 
 ### Fase 2 — Registro, negocio y onboarding mínimo
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Registro de usuario.
