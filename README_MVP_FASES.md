@@ -155,6 +155,8 @@ Validación:
 
 ### Fase 5 — Configuración de IA y simulador centralizado
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Crear servicio central `AIProviderService`.

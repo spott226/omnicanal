@@ -30,6 +30,7 @@ export class CreateNoteDto { @IsUUID() contactId!: string; @IsString() @MaxLengt
 export class CreateTagDto { @IsString() @MaxLength(60) name!: string; @IsString() @MaxLength(20) color!: string; }
 export class ContactTagDto { @IsUUID() contactId!: string; @IsUUID() tagId!: string; }
 export class PromptDto { @IsString() @MaxLength(80) agentName!: string; @IsString() @MaxLength(20000) content!: string; @IsOptional() @IsBoolean() publish?: boolean; }
+export class AISimulateDto { @IsString() @MaxLength(4000) message!: string; @IsOptional() @IsString() @MaxLength(30) channel?: string; @IsOptional() @IsInt() @Min(0) @Max(20) turn?: number; }
 export class AutomationDto { @IsString() @MaxLength(120) name!: string; @IsOptional() @IsEnum(CHANNELS) channel?: ChannelValue; @IsEnum(TRIGGER_TYPES) triggerType!: TriggerTypeValue; configuration!: Record<string, unknown>; @IsOptional() @IsBoolean() active?: boolean; }
 export class AppointmentDto { @IsUUID() contactId!: string; @IsOptional() @IsUUID() conversationId?: string; @IsDateString() scheduledAt!: string; @IsOptional() @IsString() @MaxLength(500) meetingUrl?: string; }
 export class ReminderDto { @IsUUID() contactId!: string; @IsOptional() @IsUUID() conversationId?: string; @IsDateString() scheduledAt!: string; @IsEnum(REMINDER_TYPES) type!: ReminderTypeValue; }

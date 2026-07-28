@@ -88,6 +88,7 @@ export const api = {
   closeConversation: (id: string) => request<ApiConversation>(`/conversations/${encodeURIComponent(id)}/close`, { method: "POST" }),
   saveNote: (contactId: string, content: string) => request("/notes", { method: "POST", body: JSON.stringify({ contactId, content }) }),
   savePrompt: (agentName: string, content: string, publish: boolean) => request("/prompts", { method: "POST", body: JSON.stringify({ agentName, content, publish }) }),
+  simulateAi: (message: string, channel: string, turn: number) => request<{ provider: string; model: string; agentName: string; reply: string }>("/ai/simulate", { method: "POST", body: JSON.stringify({ message, channel, turn }) }),
   automations: () => request("/automations"),
   createAppointment: (contactId: string, conversationId: string, scheduledAt: string) => request("/appointments", { method: "POST", body: JSON.stringify({ contactId, conversationId, scheduledAt }) }),
   knowledgeList: (kind: KnowledgeKind, search = "") => request<ApiPage<KnowledgeRecord>>(`/knowledge-base/${kind}?page=1&pageSize=25${search ? `&search=${encodeURIComponent(search)}` : ""}`),

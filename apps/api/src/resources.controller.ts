@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { CurrentPrincipal, Protected } from "./security";
-import { AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto } from "./resource.dto";
+import { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto } from "./resource.dto";
 import { ResourceService } from "./resource.service";
 
 const ALL = ["SUPER_ADMIN", "ORGANIZATION_ADMIN", "SUPERVISOR", "AGENT"] as const;
@@ -34,6 +34,7 @@ export class ResourcesController {
 
   @Get("prompts/current") @Protected(...ADMINS) prompt(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.prompt(principal); }
   @Post("prompts") @Protected(...ADMINS) savePrompt(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: PromptDto) { return this.resources.savePrompt(principal, dto); }
+  @Post("ai/simulate") @Protected(...ADMINS) simulateAi(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: AISimulateDto) { return this.resources.simulateAi(principal, dto); }
   @Get("automations") @Protected(...ADMINS) automations(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.automations(principal); }
   @Post("automations") @Protected(...ADMINS) createAutomation(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: AutomationDto) { return this.resources.createAutomation(principal, dto); }
 

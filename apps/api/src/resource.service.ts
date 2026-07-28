@@ -1,14 +1,15 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
+import { AIProviderService } from "./ai-provider.service";
 import { PrismaService } from "./prisma.service";
-import type { AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto } from "./resource.dto";
+import type { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto } from "./resource.dto";
 
 export function safePercentage(part: number, total: number) { return total > 0 ? Number(((Math.max(0, part) / total) * 100).toFixed(1)) : 0; }
 
 @Injectable()
 export class ResourceService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(AIProviderService) private readonly aiProvider?: AIProviderService) {}
   private org(principal: AuthPrincipal) { if (!principal.organizationId) throw new ForbiddenException("Organización requerida"); return principal.organizationId; }
   private paging(query: PageQueryDto) { return { skip: (query.page - 1) * query.pageSize, take: query.pageSize }; }
 
@@ -59,6 +60,15 @@ export class ResourceService {
 
   prompt(principal: AuthPrincipal) { return this.prisma.prompt.findFirst({ where: { organizationId: this.org(principal), active: true }, include: { publishedVersion: true, versions: { orderBy: { versionNumber: "desc" } } } }); }
   async savePrompt(principal: AuthPrincipal, dto: PromptDto) { const organizationId = this.org(principal); const existing = await this.prisma.prompt.findFirst({ where: { organizationId, active: true }, include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } }); return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => { const prompt = existing ?? await tx.prompt.create({ data: { organizationId, agentName: dto.agentName } }); const version = await tx.promptVersion.create({ data: { organizationId, promptId: prompt.id, versionNumber: (existing?.versions[0]?.versionNumber ?? 0) + 1, content: dto.content, status: dto.publish ? "PUBLISHED" : "DRAFT", createdBy: principal.userId, publishedAt: dto.publish ? new Date() : null } }); if (dto.publish) await tx.prompt.update({ where: { id: prompt.id }, data: { agentName: dto.agentName, publishedVersionId: version.id } }); await tx.auditLog.create({ data: { organizationId, userId: principal.userId, action: dto.publish ? "PROMPT_PUBLISHED" : "PROMPT_SAVED", entityType: "PromptVersion", entityId: version.id } }); return version; }); }
+  async simulateAi(principal: AuthPrincipal, dto: AISimulateDto) {
+    const organizationId = this.org(principal);
+    const [organization, prompt] = await Promise.all([
+      this.prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { name: true } }),
+      this.prisma.prompt.findFirst({ where: { organizationId, active: true }, include: { publishedVersion: true, versions: { orderBy: { versionNumber: "desc" }, take: 1 } } }),
+    ]);
+    const provider = this.aiProvider ?? new AIProviderService({ get: () => "mock" } as any);
+    return provider.simulate({ agentName: prompt?.agentName ?? "Nia", businessName: organization.name, prompt: prompt?.publishedVersion?.content ?? prompt?.versions?.[0]?.content ?? "", message: dto.message, turn: dto.turn ?? 0 });
+  }
 
   automations(principal: AuthPrincipal) { return this.prisma.automation.findMany({ where: { organizationId: this.org(principal) }, orderBy: { updatedAt: "desc" } }); }
   createAutomation(principal: AuthPrincipal, dto: AutomationDto) { return this.prisma.automation.create({ data: { organizationId: this.org(principal), name: dto.name, channel: dto.channel, triggerType: dto.triggerType, configuration: dto.configuration as Prisma.InputJsonValue, active: dto.active ?? true } }); }

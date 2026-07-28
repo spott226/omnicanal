@@ -5,6 +5,7 @@ import test from "node:test";
 import { hash } from "bcryptjs";
 import { JwtService } from "@nestjs/jwt";
 import { AuthService } from "../src/auth.service";
+import { AIProviderService } from "../src/ai-provider.service";
 import { validateEnvironment } from "../src/config";
 import { HealthController } from "../src/health.controller";
 import { ResourceService, safePercentage } from "../src/resource.service";
@@ -47,6 +48,15 @@ test("conversaciones permiten tomar, devolver a IA y cerrar con auditoria", asyn
   assert.equal((await service.closeConversation(principalA, "conversation-a")).status, "CLOSED");
   assert.deepEqual(auditLogs.map(log => log.action), ["CONVERSATION_TAKEN", "CONVERSATION_RETURNED_TO_AI", "CONVERSATION_CLOSED"]);
   assert.equal(messages.length, 3);
+});
+
+test("proveedor IA mock responde con configuracion del negocio", async () => {
+  const service = new AIProviderService({ get: () => "mock" } as any);
+  const result = service.simulate({ agentName: "Nia", businessName: "Mercadia Ops", prompt: "Haz una pregunta por mensaje", message: "hola", turn: 0 });
+  assert.equal(result.provider, "mock");
+  assert.equal(result.model, "nexo-mock-v1");
+  assert.match(result.reply, /Mercadia Ops/);
+  assert.match(result.reply, /Nia/);
 });
 
 test("login correcto crea sesión y login incorrecto falla", async () => {

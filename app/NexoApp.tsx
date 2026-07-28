@@ -320,7 +320,8 @@ function AgentSettings({notify,onTest}:{notify:(s:string)=>void;onTest?:()=>void
   const [prompt,setPrompt]=useState(defaultPrompt);
   const [status,setStatus]=useState<"Borrador"|"Publicado">("Publicado");
   const tokens=Math.max(1,Math.ceil(prompt.length/4));
-  return <section className="page-stack"><div className="section-heading"><div><h2>Entrenar IA</h2><p>Configura cómo debe responder la IA de este negocio.</p></div><div className="button-row"><button onClick={()=>{setStatus("Borrador");notify("Borrador guardado")}}>Guardar borrador</button><button onClick={()=>onTest?onTest():notify("Simulador de IA queda para la fase de proveedor mock centralizado")}>Probar prompt</button><button className="primary" onClick={()=>{setStatus("Publicado");notify("Versión 4 publicada")}}>Publicar</button></div></div><div className="two-col"><div className="card form-card"><div className="agent-profile"><span className="agent-avatar">✦</span><div><h3>Nia</h3><span><i/> {status} · {tokens} tokens aprox.</span></div></div><label>Nombre del agente<input defaultValue="Nia"/></label><label>Prompt general<textarea className="prompt prompt-general" value={prompt} onChange={event=>{setPrompt(event.target.value);setStatus("Borrador")}} aria-label="Prompt general"/></label><div className="prompt-meta"><span>{prompt.length} caracteres</span><span>{tokens} tokens aproximados</span></div></div><aside className="page-stack"><div className="card version-list"><CardTitle title="Historial de versiones" note="Cambios recientes"/>{[["v4",status,"Ahora"],["v3","Publicado","Hoy, 09:42"],["v2","Mayor calidez","14 jul, 16:20"],["v1","Versión inicial","2 jul, 11:05"]].map(v=><div key={v[0]}><b>{v[0]}</b><p><strong>{v[1]}</strong><span>{v[2]}</span></p><button onClick={()=>notify(`${v[0]} seleccionada`)}>Ver</button></div>)}</div><div className="safety-card"><span>⚕</span><div><b>Protección para temas sensibles</b><p>Las reglas de seguridad se aplican también en modo demostración.</p></div></div></aside></div></section>
+  const save = async (publish:boolean) => { try { await api.savePrompt("Nia", prompt, publish); setStatus(publish?"Publicado":"Borrador"); notify(publish?"Prompt publicado en backend":"Borrador guardado en backend"); } catch(reason) { notify(reason instanceof Error?reason.message:"No se pudo guardar el prompt"); } };
+  return <section className="page-stack"><div className="section-heading"><div><h2>Entrenar IA</h2><p>Configura cómo debe responder la IA de este negocio.</p></div><div className="button-row"><button onClick={()=>save(false)}>Guardar borrador</button><button onClick={()=>onTest?onTest():notify("Simulador de IA queda para la fase de proveedor mock centralizado")}>Probar prompt</button><button className="primary" onClick={()=>save(true)}>Publicar</button></div></div><div className="two-col"><div className="card form-card"><div className="agent-profile"><span className="agent-avatar">✦</span><div><h3>Nia</h3><span><i/> {status} · {tokens} tokens aprox.</span></div></div><label>Nombre del agente<input defaultValue="Nia"/></label><label>Prompt general<textarea className="prompt prompt-general" value={prompt} onChange={event=>{setPrompt(event.target.value);setStatus("Borrador")}} aria-label="Prompt general"/></label><div className="prompt-meta"><span>{prompt.length} caracteres</span><span>{tokens} tokens aproximados</span></div></div><aside className="page-stack"><div className="card version-list"><CardTitle title="Historial de versiones" note="Cambios recientes"/>{[["v4",status,"Ahora"],["v3","Publicado","Hoy, 09:42"],["v2","Mayor calidez","14 jul, 16:20"],["v1","Versión inicial","2 jul, 11:05"]].map(v=><div key={v[0]}><b>{v[0]}</b><p><strong>{v[1]}</strong><span>{v[2]}</span></p><button onClick={()=>notify(`${v[0]} seleccionada`)}>Ver</button></div>)}</div><div className="safety-card"><span>⚕</span><div><b>Protección para temas sensibles</b><p>Las reglas de seguridad se aplican también en modo demostración.</p></div></div></aside></div></section>
 }
 
 function Laboratory({notify}:{notify:(s:string)=>void}) {
@@ -329,12 +330,20 @@ function Laboratory({notify}:{notify:(s:string)=>void}) {
   const [chat,setChat]=useState<{body:string;role:"user"|"agent"}[]>([]);
   const userTurns = chat.filter(message => message.role === "user").length;
   const completed = chat.filter(message => message.role === "agent").length >= 3;
-  const send=()=>{
+  const send=async()=>{
     const text=input.trim();
     if(!text || completed)return;
     const turn=userTurns;
     setChat(current=>[...current,{body:text,role:"user"}]);
     setInput("");
+    try {
+      const result = await api.simulateAi(text, channel, turn);
+      setChat(current=>[...current,{body:result.reply,role:"agent"}]);
+      notify(`IA ${result.provider} respondio con ${result.model}`);
+      return;
+    } catch {
+      notify("Simulador API no disponible; usando respuesta local");
+    }
     if(turn===0){
       window.setTimeout(()=>setChat(current=>[...current,{body:"Gracias por contactarnos. ¿Te gustaría ver cómo funciona en una videollamada breve?",role:"agent"}]),450);
       return;
