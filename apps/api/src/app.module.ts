@@ -15,12 +15,12 @@ import { PrismaService } from "./prisma.service";
 import { RequestContextMiddleware } from "./request-context";
 import { ResourceService } from "./resource.service";
 import { ResourcesController } from "./resources.controller";
-import { CsrfGuard, RolesGuard, SessionGuard, TenantGuard } from "./security";
+import { CsrfGuard, RolesGuard, SessionGuard, SubscriptionGuard, TenantGuard } from "./security";
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }), JwtModule.register({ global: true }), ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]), KnowledgeBaseModule, BillingModule],
   controllers: [AuthController, HealthController, ResourcesController],
-  providers: [PrismaService, AuthService, ResourceService, AIProviderService, ChannelProviderService, SessionGuard, TenantGuard, CsrfGuard, RolesGuard, ConfigService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [PrismaService, AuthService, ResourceService, AIProviderService, ChannelProviderService, SessionGuard, TenantGuard, SubscriptionGuard, CsrfGuard, RolesGuard, ConfigService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) { consumer.apply(RequestContextMiddleware).forRoutes("*"); }

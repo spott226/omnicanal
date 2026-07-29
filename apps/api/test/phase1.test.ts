@@ -10,7 +10,7 @@ import { ChannelProviderService } from "../src/channel-provider.service";
 import { validateEnvironment } from "../src/config";
 import { HealthController } from "../src/health.controller";
 import { ResourceService, safePercentage } from "../src/resource.service";
-import { TenantGuard } from "../src/security";
+import { SubscriptionGuard, TenantGuard } from "../src/security";
 import { roleAllows, type AuthPrincipal } from "../../../packages/shared/src/index";
 
 const principalA: AuthPrincipal = { userId: "user-a", sessionId: "session-a", organizationId: "org-a", role: "ORGANIZATION_ADMIN", email: "a@nexoia.local", name: "Admin A" };
@@ -120,6 +120,23 @@ test("rutas de tenant exigen organización seleccionada", () => {
   assert.throws(() => guard.canActivate(context(undefined)));
   assert.throws(() => guard.canActivate(context({ ...principalA, role: "SUPER_ADMIN", organizationId: null })));
   assert.equal(guard.canActivate(context(principalA)), true);
+});
+
+test("guard de suscripcion permite trial vigente y bloquea trial vencido", async () => {
+  const reflector: any = { getAllAndOverride: () => false };
+  const fake: any = { subscription: { findFirst: async ({ where }: any) => ({ organizationId: where.organizationId, status: "TRIALING", trialEndsAt: where.organizationId === "org-a" ? new Date(Date.now() + 86_400_000) : new Date(Date.now() - 86_400_000), planPrice: { plan: "PRO" } }) } };
+  const guard = new SubscriptionGuard(reflector, fake);
+  const context = (principal: AuthPrincipal) => ({ switchToHttp: () => ({ getRequest: () => ({ principal }) }), getHandler: () => "handler", getClass: () => "class" }) as any;
+  assert.equal(await guard.canActivate(context(principalA)), true);
+  await assert.rejects(() => guard.canActivate(context({ ...principalA, organizationId: "org-expired" })), /trial vencido|incompleta/i);
+});
+
+test("guard de suscripcion permite rutas de billing aunque el trial este vencido", async () => {
+  const reflector: any = { getAllAndOverride: () => true };
+  const fake: any = { subscription: { findFirst: async () => { throw new Error("no debe consultar billing"); } } };
+  const guard = new SubscriptionGuard(reflector, fake);
+  const context = { switchToHttp: () => ({ getRequest: () => ({ principal: principalA }) }), getHandler: () => "handler", getClass: () => "class" } as any;
+  assert.equal(await guard.canActivate(context), true);
 });
 
 test("roles tienen permisos distintos en backend", () => {

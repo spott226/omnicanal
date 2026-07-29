@@ -1,12 +1,13 @@
 import { Body, Controller, Get, Inject, Post } from "@nestjs/common";
 import type { AuthPrincipal } from "../../../../packages/shared/src/index";
-import { CurrentPrincipal, Protected } from "../security";
+import { AllowInactiveSubscription, CurrentPrincipal, Protected } from "../security";
 import { BillingProviderService } from "./billing-provider.service";
 import { BillingService } from "./billing.service";
 import { BillingMockActionDto, CheckoutDto } from "./billing.dto";
 
 const ADMINS = ["SUPER_ADMIN", "ORGANIZATION_ADMIN"] as const;
 
+@AllowInactiveSubscription()
 @Controller("billing")
 export class BillingController {
   constructor(@Inject(BillingService) private readonly billing: BillingService, @Inject(BillingProviderService) private readonly provider: BillingProviderService) {}

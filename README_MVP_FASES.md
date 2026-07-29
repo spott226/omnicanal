@@ -235,6 +235,8 @@ Validación:
 
 ### Fase 9 — Control de acceso por suscripción
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Guard/middleware backend.

@@ -4,6 +4,7 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import type { AuthPrincipal, AppRole } from "../../../packages/shared/src/index";
 import { AuthService } from "./auth.service";
+import { PrismaService } from "./prisma.service";
 
 type AuthenticatedRequest = Request & { principal?: AuthPrincipal };
 
@@ -42,6 +43,31 @@ export class RolesGuard implements CanActivate {
   }
 }
 
+const ALLOW_INACTIVE_SUBSCRIPTION_KEY = "nexoia_allow_inactive_subscription";
+export const AllowInactiveSubscription = () => SetMetadata(ALLOW_INACTIVE_SUBSCRIPTION_KEY, true);
+
+@Injectable()
+export class SubscriptionGuard implements CanActivate {
+  constructor(@Inject(Reflector) private readonly reflector: Reflector, @Inject(PrismaService) private readonly prisma: PrismaService) {}
+  async canActivate(context: ExecutionContext) {
+    const allowInactive = this.reflector.getAllAndOverride<boolean>(ALLOW_INACTIVE_SUBSCRIPTION_KEY, [context.getHandler(), context.getClass()]);
+    if (allowInactive) return true;
+    const principal = context.switchToHttp().getRequest<AuthenticatedRequest>().principal;
+    if (!principal?.organizationId) throw new ForbiddenException("Organizacion requerida");
+    const subscription = await (this.prisma as any).subscription.findFirst({ where: { organizationId: principal.organizationId }, orderBy: { createdAt: "desc" }, include: { planPrice: true } });
+    if (!subscription) throw new ForbiddenException("Suscripcion requerida para usar esta funcion");
+    if (subscription.status === "ACTIVE") return true;
+    if (subscription.status === "TRIALING") {
+      if (new Date(subscription.trialEndsAt).getTime() > Date.now()) return true;
+      throw new ForbiddenException("Trial vencido. Activa un plan para continuar.");
+    }
+    if (subscription.status === "PAST_DUE") throw new ForbiddenException("Pago pendiente. Actualiza tu plan para continuar.");
+    if (subscription.status === "INCOMPLETE") throw new ForbiddenException("Suscripcion incompleta o trial vencido. Activa un plan para continuar.");
+    if (subscription.status === "CANCELLED") throw new ForbiddenException("Suscripcion cancelada. Reactiva un plan para continuar.");
+    throw new ForbiddenException("Suscripcion no valida para esta funcion");
+  }
+}
+
 @Injectable()
 export class CsrfGuard implements CanActivate {
   constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
@@ -57,5 +83,5 @@ export class CsrfGuard implements CanActivate {
   }
 }
 
-export const Protected = (...roles: AppRole[]) => applyDecorators(UseGuards(SessionGuard, TenantGuard, CsrfGuard, RolesGuard), Roles(...roles));
+export const Protected = (...roles: AppRole[]) => applyDecorators(UseGuards(SessionGuard, TenantGuard, SubscriptionGuard, CsrfGuard, RolesGuard), Roles(...roles));
 export const CurrentPrincipal = createParamDecorator((_data: unknown, context: ExecutionContext) => context.switchToHttp().getRequest<AuthenticatedRequest>().principal);
