@@ -193,6 +193,8 @@ Validación:
 
 ### Fase 7 — Canales en modo mock centralizado
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Crear `ChannelProviderService`.

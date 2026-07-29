@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { AIProviderService } from "./ai-provider.service";
+import { ChannelProviderService } from "./channel-provider.service";
 import { BillingModule } from "./billing/billing.module";
 import { validateEnvironment } from "./config";
 import { HealthController } from "./health.controller";
@@ -19,7 +20,7 @@ import { CsrfGuard, RolesGuard, SessionGuard, TenantGuard } from "./security";
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }), JwtModule.register({ global: true }), ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]), KnowledgeBaseModule, BillingModule],
   controllers: [AuthController, HealthController, ResourcesController],
-  providers: [PrismaService, AuthService, ResourceService, AIProviderService, SessionGuard, TenantGuard, CsrfGuard, RolesGuard, ConfigService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [PrismaService, AuthService, ResourceService, AIProviderService, ChannelProviderService, SessionGuard, TenantGuard, CsrfGuard, RolesGuard, ConfigService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) { consumer.apply(RequestContextMiddleware).forRoutes("*"); }

@@ -3,6 +3,7 @@ import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { CurrentPrincipal, Protected } from "./security";
 import { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto } from "./resource.dto";
 import { ResourceService } from "./resource.service";
+import { ChannelProviderService } from "./channel-provider.service";
 
 const ALL = ["SUPER_ADMIN", "ORGANIZATION_ADMIN", "SUPERVISOR", "AGENT"] as const;
 const MANAGERS = ["SUPER_ADMIN", "ORGANIZATION_ADMIN", "SUPERVISOR"] as const;
@@ -10,10 +11,14 @@ const ADMINS = ["SUPER_ADMIN", "ORGANIZATION_ADMIN"] as const;
 
 @Controller()
 export class ResourcesController {
-  constructor(@Inject(ResourceService) private readonly resources: ResourceService) {}
+  constructor(@Inject(ResourceService) private readonly resources: ResourceService, @Inject(ChannelProviderService) private readonly channels: ChannelProviderService) {}
 
   @Get("organization/current") @Protected(...ALL) organization(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.currentOrganization(principal); }
   @Get("dashboard") @Protected(...MANAGERS) dashboard(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.dashboard(principal); }
+  @Get("channels") @Protected(...ALL) channelsStatus() { return this.channels.list(); }
+  @Post("channels/:channel/connect") @Protected(...MANAGERS) connectChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.connect(channel); }
+  @Post("channels/:channel/disconnect") @Protected(...MANAGERS) disconnectChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.disconnect(channel); }
+  @Post("channels/:channel/test") @Protected(...ALL) testChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.test(channel); }
 
   @Get("contacts") @Protected(...ALL) contacts(@CurrentPrincipal() principal: AuthPrincipal, @Query() query: PageQueryDto) { return this.resources.contacts(principal, query); }
   @Post("contacts") @Protected(...MANAGERS) createContact(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: CreateContactDto) { return this.resources.createContact(principal, dto); }

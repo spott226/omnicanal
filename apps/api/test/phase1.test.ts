@@ -6,6 +6,7 @@ import { hash } from "bcryptjs";
 import { JwtService } from "@nestjs/jwt";
 import { AuthService } from "../src/auth.service";
 import { AIProviderService } from "../src/ai-provider.service";
+import { ChannelProviderService } from "../src/channel-provider.service";
 import { validateEnvironment } from "../src/config";
 import { HealthController } from "../src/health.controller";
 import { ResourceService, safePercentage } from "../src/resource.service";
@@ -57,6 +58,17 @@ test("proveedor IA mock responde con configuracion del negocio", async () => {
   assert.equal(result.model, "nexo-mock-v1");
   assert.match(result.reply, /Mercadia Ops/);
   assert.match(result.reply, /Nia/);
+});
+
+test("proveedor de canales mock no llama Meta y expone estados claros", () => {
+  const service = new ChannelProviderService({ get: () => "mock" } as any);
+  const channels = service.list();
+  assert.equal(channels.length, 3);
+  assert.equal(channels[0].provider, "mock");
+  assert.equal(channels[0].isMock, true);
+  const result = service.test("INSTAGRAM");
+  assert.equal(result.ok, true);
+  assert.match(result.message, /No se llamo a Meta/);
 });
 
 test("login correcto crea sesión y login incorrecto falla", async () => {

@@ -45,6 +45,7 @@ export type KnowledgeKind = "faqs" | "products" | "services" | "promotions" | "s
 export type KnowledgeRecord = Record<string, unknown> & { id: string; name?: string; title?: string; question?: string; code?: string; sku?: string; active?: boolean; updatedAt?: string; deletedAt?: string | null };
 export type BillingInterval = "MONTHLY" | "YEARLY";
 export type BillingPlan = "STARTER" | "PRO" | "ENTERPRISE";
+export type ChannelStatusInfo = { channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK"; label: string; provider: string; status: "NOT_CONNECTED" | "CONFIGURING" | "CONNECTED_MOCK" | "ERROR" | "TOKEN_EXPIRED"; isMock: boolean; accountLabel: string; lastSyncAt: string; message: string; ok?: boolean };
 export type PlanPrice = { id: string; plan: BillingPlan; interval: BillingInterval; currency: string; amountCents: number; monthlyContactsLimit: number; seatsLimit: number; channelsLimit: number; aiResponsesLimit: number; active: boolean; stripePriceId?: string | null };
 export type SubscriptionInfo = { id: string; status: "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELLED" | "INCOMPLETE"; trialEndsAt: string; currentPeriodEndsAt: string; trialDays: number; trialDaysLeft: number; trialExpired: boolean; planPrice: PlanPrice };
 export type BillingUsage = {
@@ -79,6 +80,10 @@ export const api = {
   session: () => request<{ userId: string; organizationId: string; role: string }>("/auth/session"),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
   dashboard: () => request<ApiDashboard>("/dashboard"),
+  channels: () => request<ChannelStatusInfo[]>("/channels"),
+  channelConnect: (channel: ChannelStatusInfo["channel"]) => request<ChannelStatusInfo>(`/channels/${channel}/connect`, { method: "POST" }),
+  channelDisconnect: (channel: ChannelStatusInfo["channel"]) => request<ChannelStatusInfo>(`/channels/${channel}/disconnect`, { method: "POST" }),
+  channelTest: (channel: ChannelStatusInfo["channel"]) => request<ChannelStatusInfo>(`/channels/${channel}/test`, { method: "POST" }),
   contacts: (page = 1) => request<ApiPage<ApiContact>>(`/contacts?page=${page}`),
   conversations: (page = 1) => request<ApiPage<ApiConversation>>(`/conversations?page=${page}`),
   conversation: (id: string) => request<ApiConversation>(`/conversations/${encodeURIComponent(id)}`),
