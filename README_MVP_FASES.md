@@ -214,6 +214,8 @@ Validación:
 
 ### Fase 8 — Billing mock y Stripe preparado
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Crear `BillingProviderService`.

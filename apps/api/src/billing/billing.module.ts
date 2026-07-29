@@ -4,11 +4,12 @@ import { AuthService } from "../auth.service";
 import { PrismaService } from "../prisma.service";
 import { CsrfGuard, RolesGuard, SessionGuard, TenantGuard } from "../security";
 import { BillingController } from "./billing.controller";
+import { BillingProviderService } from "./billing-provider.service";
 import { BillingService } from "./billing.service";
 
 @Module({
   controllers: [BillingController],
-  providers: [BillingService, PrismaService, ConfigService, AuthService, SessionGuard, TenantGuard, CsrfGuard, RolesGuard],
-  exports: [BillingService],
+  providers: [BillingService, BillingProviderService, PrismaService, ConfigService, AuthService, SessionGuard, TenantGuard, CsrfGuard, RolesGuard],
+  exports: [BillingService, BillingProviderService],
 })
 export class BillingModule {}

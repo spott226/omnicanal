@@ -45,6 +45,7 @@ export type KnowledgeKind = "faqs" | "products" | "services" | "promotions" | "s
 export type KnowledgeRecord = Record<string, unknown> & { id: string; name?: string; title?: string; question?: string; code?: string; sku?: string; active?: boolean; updatedAt?: string; deletedAt?: string | null };
 export type BillingInterval = "MONTHLY" | "YEARLY";
 export type BillingPlan = "STARTER" | "PRO" | "ENTERPRISE";
+export type BillingMockAction = "ACTIVATE_PLAN" | "CHANGE_PLAN" | "CANCEL_RENEWAL" | "RENEW" | "EXPIRE_TRIAL";
 export type ChannelStatusInfo = { channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK"; label: string; provider: string; status: "NOT_CONNECTED" | "CONFIGURING" | "CONNECTED_MOCK" | "ERROR" | "TOKEN_EXPIRED"; isMock: boolean; accountLabel: string; lastSyncAt: string; message: string; ok?: boolean };
 export type PlanPrice = { id: string; plan: BillingPlan; interval: BillingInterval; currency: string; amountCents: number; monthlyContactsLimit: number; seatsLimit: number; channelsLimit: number; aiResponsesLimit: number; active: boolean; stripePriceId?: string | null };
 export type SubscriptionInfo = { id: string; status: "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELLED" | "INCOMPLETE"; trialEndsAt: string; currentPeriodEndsAt: string; trialDays: number; trialDaysLeft: number; trialExpired: boolean; planPrice: PlanPrice };
@@ -104,4 +105,5 @@ export const api = {
   billingSubscription: () => request<SubscriptionInfo>("/billing/subscription"),
   billingUsage: () => request<BillingUsage>("/billing/usage"),
   billingCheckout: (planPriceId: string) => request<{ provider: string; status: string; checkoutUrl: string | null; message: string; planPrice: PlanPrice }>("/billing/checkout", { method: "POST", body: JSON.stringify({ planPriceId }) }),
+  billingSimulate: (action: BillingMockAction, planPriceId?: string) => request<{ provider: string; mode: string; action: BillingMockAction; stripeTouched: boolean; message: string; subscription: SubscriptionInfo }>("/billing/simulate", { method: "POST", body: JSON.stringify({ action, planPriceId }) }),
 };

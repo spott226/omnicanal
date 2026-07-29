@@ -37,6 +37,17 @@ export class BillingService {
     const planPrice = await (this.prisma as any).planPrice.findFirst({ where: { id: planPriceId, active: true } });
     if (!planPrice) throw new BadRequestException("Plan no disponible");
     await this.currentSubscription(principal);
+    const mode = (this.config.get<string>("BILLING_PROVIDER_MODE") ?? "mock").toLowerCase();
+    if (mode === "mock") {
+      await (this.prisma as any).billingEvent.create({ data: { organizationId, provider: "MOCK", type: "MOCK_CHECKOUT_PREPARED", payload: { planPriceId, plan: planPrice.plan, interval: planPrice.interval } } });
+      return {
+        provider: "MOCK",
+        status: "MOCK_CHECKOUT_READY",
+        checkoutUrl: null,
+        message: "Checkout simulado listo. Stripe real no fue llamado.",
+        planPrice,
+      };
+    }
     const stripeReady = Boolean(this.config.get<string>("STRIPE_SECRET_KEY") && planPrice.stripePriceId);
     await (this.prisma as any).billingEvent.create({ data: { organizationId, type: stripeReady ? "CHECKOUT_REQUESTED" : "CHECKOUT_PENDING_STRIPE_KEYS", payload: { planPriceId, plan: planPrice.plan, interval: planPrice.interval } } });
     return {

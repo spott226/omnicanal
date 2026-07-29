@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
+import { BillingProviderService } from "../src/billing/billing-provider.service";
 import { BillingService } from "../src/billing/billing.service";
 
 const principal: AuthPrincipal = { userId: "user-a", sessionId: "session-a", organizationId: "org-a", role: "ORGANIZATION_ADMIN", email: "admin@nexoia.local", name: "Admin" };
@@ -53,9 +54,32 @@ test("checkout queda bloqueado hasta configurar Stripe real", async () => {
     subscription: { findFirst: async () => ({ id: "sub-a", status: "TRIALING", trialEndsAt: new Date(Date.now() + 7 * 86_400_000), currentPeriodStartsAt: new Date(), planPrice: { monthlyContactsLimit: 3000 } }) },
     billingEvent: { create: async () => ({}) },
   };
-  const result = await new BillingService(fake, { get: () => "" } as any).createCheckout(principal, "price-a");
+  const result = await new BillingService(fake, { get: (key: string) => key === "BILLING_PROVIDER_MODE" ? "stripe" : "" } as any).createCheckout(principal, "price-a");
   assert.equal(result.status, "STRIPE_CONFIGURATION_REQUIRED");
   assert.equal(result.checkoutUrl, null);
+});
+
+test("billing provider mock cambia plan sin tocar Stripe", async () => {
+  const events: any[] = [];
+  const updates: any[] = [];
+  const fake: any = {
+    subscription: {
+      findFirst: async () => ({ id: "sub-a", organizationId: "org-a", planPriceId: "price-old", status: "TRIALING", createdAt: new Date(), planPrice: { id: "price-old", plan: "STARTER" } }),
+      update: async ({ data, include }: any) => {
+        updates.push(data);
+        return { id: "sub-a", ...data, include, planPrice: { id: data.planPriceId, plan: "PRO", interval: "MONTHLY" } };
+      },
+    },
+    planPrice: { findFirst: async ({ where }: any) => ({ id: where.id, active: true, plan: "PRO", interval: "MONTHLY" }) },
+    billingEvent: { create: async ({ data }: any) => events.push(data) },
+  };
+  const result = await new BillingProviderService(fake, { get: () => "mock" } as any).simulate(principal, "CHANGE_PLAN", "price-pro");
+  assert.equal(result.provider, "MOCK");
+  assert.equal(result.stripeTouched, false);
+  assert.equal(updates[0].planPriceId, "price-pro");
+  assert.equal(updates[0].status, "ACTIVE");
+  assert.equal(events[0].provider, "MOCK");
+  assert.equal(events[0].type, "MOCK_CHANGE_PLAN");
 });
 
 test("la migración de billing contiene planes, suscripciones y eventos Stripe", () => {

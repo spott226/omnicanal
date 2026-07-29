@@ -15,6 +15,7 @@ const schema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional().default(""),
   STRIPE_SUCCESS_URL: z.string().url().optional(),
   STRIPE_CANCEL_URL: z.string().url().optional(),
+  BILLING_PROVIDER_MODE: z.enum(["mock", "stripe"]).optional().default("mock"),
 });
 
 export type AppEnvironment = z.infer<typeof schema>;
