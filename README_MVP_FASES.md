@@ -253,6 +253,8 @@ Validación:
 
 ### Fase 10 — Preparación para integraciones reales
 
+Estado: completada en primer pase.
+
 Objetivo:
 
 - Documentar y preparar conexión real:
@@ -268,6 +270,10 @@ Orden recomendado:
 3. Meta real.
 
 Meta se conecta al final porque depende de suscripción, límites, IA y canales bien modelados.
+
+Documento operativo:
+
+- `docs/INTEGRACIONES_REALES.md`
 
 ## Comandos de validación
 

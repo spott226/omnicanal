@@ -19,6 +19,13 @@ test("valida variables obligatorias y rechaza secretos débiles", () => {
   assert.throws(() => validateEnvironment({ DATABASE_URL: "postgresql://x", REDIS_URL: "redis://x", JWT_SECRET: "short" }));
   const env = validateEnvironment({ DATABASE_URL: "postgresql://nexoia:nexoia@localhost:5432/nexoia", REDIS_URL: "redis://localhost:6379", JWT_SECRET: "x".repeat(32), SESSION_SECRET: "y".repeat(32), APP_ENCRYPTION_KEY: "z".repeat(32), FRONTEND_URL: "http://localhost:3000", BACKEND_URL: "http://localhost:3001", CORS_ORIGIN: "http://localhost:3000" });
   assert.equal(env.PORT, 3001);
+  assert.equal(env.AI_PROVIDER_MODE, "mock");
+  assert.equal(env.CHANNEL_PROVIDER_MODE, "mock");
+  assert.equal(env.BILLING_PROVIDER_MODE, "mock");
+  const realModes = validateEnvironment({ DATABASE_URL: "postgresql://nexoia:nexoia@localhost:5432/nexoia", REDIS_URL: "redis://localhost:6379", JWT_SECRET: "x".repeat(32), SESSION_SECRET: "y".repeat(32), APP_ENCRYPTION_KEY: "z".repeat(32), FRONTEND_URL: "http://localhost:3000", BACKEND_URL: "http://localhost:3001", CORS_ORIGIN: "http://localhost:3000", AI_PROVIDER_MODE: "openai", CHANNEL_PROVIDER_MODE: "meta", BILLING_PROVIDER_MODE: "stripe" });
+  assert.equal(realModes.AI_PROVIDER_MODE, "openai");
+  assert.equal(realModes.CHANNEL_PROVIDER_MODE, "meta");
+  assert.equal(realModes.BILLING_PROVIDER_MODE, "stripe");
 });
 
 test("backend bloquea crear contactos cuando el plan ya llego al limite", async () => {
