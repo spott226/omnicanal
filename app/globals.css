@@ -76,3 +76,19 @@ input,select,textarea,.search,.section-heading>button,.button-row>button,.table-
 @media(max-width:1100px){.automation-grid{grid-template-columns:1fr}.automation-card{min-height:0}.main{overflow-x:hidden}}
 @media(max-width:900px){.sidebar{width:min(290px,86vw)}.sidebar.open{box-shadow:24px 0 80px rgba(0,0,0,.5)}.section-heading{flex-direction:column;align-items:stretch}.section-heading>button{width:100%}.topbar{height:auto;min-height:72px;padding-top:12px;padding-bottom:12px}.content{padding:16px;width:100%;max-width:none}.automation-grid{grid-template-columns:1fr}.profile-menu{bottom:auto;top:calc(100% + 8px)}}
 @media(max-width:650px){.content{padding:12px}.automation-card{padding:15px}.automation-card .automation-footer{display:grid!important;grid-template-columns:1fr 1fr}.automation-card .automation-footer span{display:flex;flex-direction:column;align-items:flex-start;gap:2px}.automation-card .automation-actions{display:grid!important;grid-template-columns:1fr 1fr}.automation-card .automation-actions button{width:100%}.top-actions .icon-button{display:none}.brand{font-size:22px}.profile{margin-bottom:8px}.metric-grid{grid-template-columns:1fr}}
+
+/* Contrast stabilization before production deploy */
+input,select,textarea{background:#101827!important;color:#f8fbff!important;border-color:#263a57!important}
+input::placeholder,textarea::placeholder{color:#91a4bd!important}
+select option{background:#ffffff!important;color:#06101f!important}
+label,.form-card label,.settings-content label{color:#d7e6f8!important}
+.card,.metric-card,.settings-content,.settings-nav,.table-card,.contact-panel,.thread-list,.chat-head,.quick-replies,.composer,.modal{color:#f5fbff}
+.card p,.card small,.settings-content p,.settings-content small,.section-heading p,.lab-header p,.detail span{color:#a9bfd6!important}
+.card h3,.card h4,.settings-content h3,.settings-content h4,.team-list b,.security-box b,.channel-toggle b{color:#f8fbff!important}
+.safety-card{background:#152033!important;border:1px solid #2b4265!important;color:#f8fbff!important}
+.safety-card b{color:#f8fbff!important}.safety-card p{color:#b8c9dc!important}
+.admin-access,.business-data,.response-time,.meta-ready{background:#101b2d!important;border-color:#263a57!important;color:#f5fbff!important}
+.settings-nav button,.section-heading>button,.button-row>button,.table-tools>button,.automation-builder button,.channel-card>button,.admin-access button,.lab-header button,.compare button,.chat-actions button{background:#121d31!important;color:#f5fbff!important;border-color:#2b4265!important}
+.settings-nav button.active,.settings-nav button:hover{background:#19395b!important;color:#ffffff!important}
+.team-list>div,.security-box>div,.invoice-list>div,.version-list>div,.provider-list>div{border-color:#243854!important}
+.team-list select{min-width:170px}

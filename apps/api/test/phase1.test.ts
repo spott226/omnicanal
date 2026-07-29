@@ -37,6 +37,32 @@ test("backend bloquea crear contactos cuando el plan ya llego al limite", async 
   await assert.rejects(() => service.createContact(principalA, { firstName: "Nuevo" }), /limite de contactos/);
 });
 
+test("equipo crea membresias persistentes y respeta limite de usuarios", async () => {
+  const created: any[] = [];
+  const fake: any = {
+    subscription: { findFirst: async () => ({ planPrice: { seatsLimit: 2 } }) },
+    membership: {
+      count: async () => 1,
+    },
+    $transaction: async (callback: any) => callback({
+      user: {
+        findUnique: async () => null,
+        create: async ({ data }: any) => ({ id: "user-team", ...data }),
+      },
+      membership: {
+        findUnique: async () => null,
+        create: async ({ data }: any) => { created.push(data); return { id: "membership-team", ...data, user: { id: data.userId, name: "Agente", email: "agente@mercadia.local", status: "ACTIVE", createdAt: new Date() } }; },
+      },
+      auditLog: { create: async () => ({}) },
+    }),
+  };
+  const service = new ResourceService(fake);
+  const member = await service.inviteMember(principalA, { name: "Agente", email: "agente@mercadia.local", role: "AGENT" });
+  assert.equal(member.role, "AGENT");
+  assert.equal(created[0].organizationId, "org-a");
+  assert.match(member.temporaryPassword, /^Next-/);
+});
+
 test("conversaciones permiten tomar, devolver a IA y cerrar con auditoria", async () => {
   const updates: any[] = [];
   const auditLogs: any[] = [];

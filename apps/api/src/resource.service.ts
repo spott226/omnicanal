@@ -1,9 +1,11 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { hash } from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { AIProviderService } from "./ai-provider.service";
 import { PrismaService } from "./prisma.service";
-import type { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto } from "./resource.dto";
+import type { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, InviteMemberDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto, UpdateMemberRoleDto } from "./resource.dto";
 
 export function safePercentage(part: number, total: number) { return total > 0 ? Number(((Math.max(0, part) / total) * 100).toFixed(1)) : 0; }
 
@@ -14,6 +16,47 @@ export class ResourceService {
   private paging(query: PageQueryDto) { return { skip: (query.page - 1) * query.pageSize, take: query.pageSize }; }
 
   currentOrganization(principal: AuthPrincipal) { return this.prisma.organization.findUniqueOrThrow({ where: { id: this.org(principal) }, select: { id: true, name: true, slug: true, status: true, mode: true, plan: true } }); }
+
+  teamMembers(principal: AuthPrincipal) {
+    return (this.prisma as any).membership.findMany({ where: { organizationId: this.org(principal) }, orderBy: { createdAt: "asc" }, include: { user: { select: { id: true, name: true, email: true, status: true, createdAt: true } } } });
+  }
+
+  async inviteMember(principal: AuthPrincipal, dto: InviteMemberDto) {
+    const organizationId = this.org(principal);
+    await this.ensureSeatLimit(organizationId);
+    const email = dto.email.toLowerCase().trim();
+    const temporaryPassword = `Next-${randomUUID().slice(0, 8)}!`;
+    const passwordHash = await hash(temporaryPassword, 12);
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      let user = await tx.user.findUnique({ where: { email } });
+      if (!user) user = await tx.user.create({ data: { name: dto.name.trim(), email, passwordHash, status: "ACTIVE" } });
+      const existing = await (tx as any).membership.findUnique({ where: { organizationId_userId: { organizationId, userId: user.id } } });
+      if (existing) throw new ConflictException("Este usuario ya pertenece al equipo");
+      const membership = await (tx as any).membership.create({ data: { organizationId, userId: user.id, role: dto.role }, include: { user: { select: { id: true, name: true, email: true, status: true, createdAt: true } } } });
+      await tx.auditLog.create({ data: { organizationId, userId: principal.userId, action: "TEAM_MEMBER_INVITED", entityType: "Membership", entityId: membership.id, metadata: { email, role: dto.role } } });
+      return { ...membership, temporaryPassword };
+    });
+  }
+
+  async updateMemberRole(principal: AuthPrincipal, membershipId: string, dto: UpdateMemberRoleDto) {
+    const organizationId = this.org(principal);
+    const membership = await (this.prisma as any).membership.findFirst({ where: { id: membershipId, organizationId }, include: { user: true } });
+    if (!membership) throw new NotFoundException("Miembro no encontrado");
+    if (membership.userId === principal.userId && dto.role !== "ORGANIZATION_ADMIN") throw new ForbiddenException("No puedes quitarte tu propio rol administrador");
+    const updated = await (this.prisma as any).membership.update({ where: { id: membershipId }, data: { role: dto.role }, include: { user: { select: { id: true, name: true, email: true, status: true, createdAt: true } } } });
+    await this.audit(principal, "TEAM_MEMBER_ROLE_UPDATED", "Membership", membershipId);
+    return updated;
+  }
+
+  async removeMember(principal: AuthPrincipal, membershipId: string) {
+    const organizationId = this.org(principal);
+    const membership = await (this.prisma as any).membership.findFirst({ where: { id: membershipId, organizationId } });
+    if (!membership) throw new NotFoundException("Miembro no encontrado");
+    if (membership.userId === principal.userId) throw new ForbiddenException("No puedes eliminarte de tu propio equipo");
+    await (this.prisma as any).membership.delete({ where: { id: membershipId } });
+    await this.audit(principal, "TEAM_MEMBER_REMOVED", "Membership", membershipId);
+    return { ok: true };
+  }
 
   async dashboard(principal: AuthPrincipal) {
     const organizationId = this.org(principal); const now = new Date(); const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -104,5 +147,14 @@ export class ResourceService {
     if (!subscription?.planPrice?.monthlyContactsLimit) return;
     const used = await this.prisma.contact.count({ where: { organizationId } });
     if (used >= subscription.planPrice.monthlyContactsLimit) throw new ForbiddenException("Alcanzaste el limite de contactos de tu plan. Cambia de plan para agregar mas.");
+  }
+  private async ensureSeatLimit(organizationId: string) {
+    const subscriptionApi = (this.prisma as any).subscription;
+    const membershipApi = (this.prisma as any).membership;
+    if (!subscriptionApi?.findFirst || !membershipApi?.count) return;
+    const subscription = await subscriptionApi.findFirst({ where: { organizationId, status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "INCOMPLETE"] } }, orderBy: { createdAt: "desc" }, include: { planPrice: true } });
+    if (!subscription?.planPrice?.seatsLimit) return;
+    const used = await membershipApi.count({ where: { organizationId } });
+    if (used >= subscription.planPrice.seatsLimit) throw new ForbiddenException("Alcanzaste el limite de usuarios de tu plan. Cambia de plan para agregar mas.");
   }
 }

@@ -3,10 +3,12 @@ const CHANNELS = ["INSTAGRAM", "WHATSAPP", "FACEBOOK"] as const;
 const TEMPERATURES = ["COLD", "WARM", "HOT"] as const;
 const TRIGGER_TYPES = ["KEYWORD", "LEAD_SCORE", "APPOINTMENT", "NO_RESPONSE", "MANUAL"] as const;
 const REMINDER_TYPES = ["FOLLOW_UP", "APPOINTMENT", "CUSTOM"] as const;
+const TEAM_ROLES = ["ORGANIZATION_ADMIN", "SUPERVISOR", "AGENT"] as const;
 type ChannelValue = (typeof CHANNELS)[number];
 type TemperatureValue = (typeof TEMPERATURES)[number];
 type TriggerTypeValue = (typeof TRIGGER_TYPES)[number];
 type ReminderTypeValue = (typeof REMINDER_TYPES)[number];
+type TeamRoleValue = (typeof TEAM_ROLES)[number];
 
 export class PageQueryDto {
   @IsOptional() @IsInt() @Min(1) page = 1;
@@ -34,3 +36,5 @@ export class AISimulateDto { @IsString() @MaxLength(4000) message!: string; @IsO
 export class AutomationDto { @IsString() @MaxLength(120) name!: string; @IsOptional() @IsEnum(CHANNELS) channel?: ChannelValue; @IsEnum(TRIGGER_TYPES) triggerType!: TriggerTypeValue; configuration!: Record<string, unknown>; @IsOptional() @IsBoolean() active?: boolean; }
 export class AppointmentDto { @IsUUID() contactId!: string; @IsOptional() @IsUUID() conversationId?: string; @IsDateString() scheduledAt!: string; @IsOptional() @IsString() @MaxLength(500) meetingUrl?: string; }
 export class ReminderDto { @IsUUID() contactId!: string; @IsOptional() @IsUUID() conversationId?: string; @IsDateString() scheduledAt!: string; @IsEnum(REMINDER_TYPES) type!: ReminderTypeValue; }
+export class InviteMemberDto { @IsString() @MaxLength(120) name!: string; @IsEmail() email!: string; @IsEnum(TEAM_ROLES) role!: TeamRoleValue; }
+export class UpdateMemberRoleDto { @IsEnum(TEAM_ROLES) role!: TeamRoleValue; }

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { CurrentPrincipal, Protected } from "./security";
-import { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto } from "./resource.dto";
+import { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, InviteMemberDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto, UpdateMemberRoleDto } from "./resource.dto";
 import { ResourceService } from "./resource.service";
 import { ChannelProviderService } from "./channel-provider.service";
 
@@ -15,6 +15,10 @@ export class ResourcesController {
 
   @Get("organization/current") @Protected(...ALL) organization(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.currentOrganization(principal); }
   @Get("dashboard") @Protected(...MANAGERS) dashboard(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.dashboard(principal); }
+  @Get("team/members") @Protected(...ADMINS) teamMembers(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.teamMembers(principal); }
+  @Post("team/members") @Protected(...ADMINS) inviteMember(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: InviteMemberDto) { return this.resources.inviteMember(principal, dto); }
+  @Patch("team/members/:id") @Protected(...ADMINS) updateMemberRole(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateMemberRoleDto) { return this.resources.updateMemberRole(principal, id, dto); }
+  @Delete("team/members/:id") @Protected(...ADMINS) removeMember(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.removeMember(principal, id); }
   @Get("channels") @Protected(...ALL) channelsStatus() { return this.channels.list(); }
   @Post("channels/:channel/connect") @Protected(...MANAGERS) connectChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.connect(channel); }
   @Post("channels/:channel/disconnect") @Protected(...MANAGERS) disconnectChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.disconnect(channel); }
