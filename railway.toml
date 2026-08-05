@@ -1,6 +1,5 @@
 [build]
-builder = "NIXPACKS"
-buildCommand = "npm ci && npm run db:generate && npm run build:api"
+builder = "DOCKERFILE"
 
 [deploy]
 preDeployCommand = "npm run db:migrate"
