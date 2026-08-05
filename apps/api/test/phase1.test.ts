@@ -292,9 +292,14 @@ test("cálculos de dashboard no generan porcentajes negativos", () => {
   assert.equal(safePercentage(5, 0), 0);
 });
 
-test("health check reporta PostgreSQL conectado", async () => {
+test("health check reporta API viva", () => {
   const controller = new HealthController({ $queryRaw: async () => [{ ok: 1 }] } as any);
-  assert.equal((await controller.health()).database, "connected");
+  assert.equal(controller.health().status, "ok");
+});
+
+test("deep health check reporta PostgreSQL conectado", async () => {
+  const controller = new HealthController({ $queryRaw: async () => [{ ok: 1 }] } as any);
+  assert.equal((await controller.deepHealth()).database, "connected");
 });
 
 test("migración y seed demo son reproducibles y protegidos", () => {
