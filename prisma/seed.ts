@@ -57,12 +57,12 @@ export async function seedDemo() {
     ] });
   }
   const planPrices = [
-    ["STARTER", "MONTHLY", 99000, 1000, 3, 1, 500],
-    ["PRO", "MONTHLY", 199000, 3000, 10, 3, 3000],
-    ["ENTERPRISE", "MONTHLY", 349000, 10000, 25, 10, 10000],
-    ["STARTER", "YEARLY", 948000, 1000, 3, 1, 500],
-    ["PRO", "YEARLY", 1908000, 3000, 10, 3, 3000],
-    ["ENTERPRISE", "YEARLY", 3348000, 10000, 25, 10, 10000],
+    ["STARTER", "MONTHLY", 99000, 500, 3, 1, 500],
+    ["PRO", "MONTHLY", 199000, 2000, 10, 3, 2000],
+    ["ENTERPRISE", "MONTHLY", 349000, 5000, 25, 10, 5000],
+    ["STARTER", "YEARLY", 948000, 500, 3, 1, 500],
+    ["PRO", "YEARLY", 1908000, 2000, 10, 3, 2000],
+    ["ENTERPRISE", "YEARLY", 3348000, 5000, 25, 10, 5000],
   ] as const;
   for (const [plan, interval, amountCents, monthlyContactsLimit, seatsLimit, channelsLimit, aiResponsesLimit] of planPrices) {
     await prisma.planPrice.upsert({ where: { plan_interval: { plan, interval } }, update: { currency: "MXN", amountCents, monthlyContactsLimit, seatsLimit, channelsLimit, aiResponsesLimit, active: true }, create: { plan, interval, currency: "MXN", amountCents, monthlyContactsLimit, seatsLimit, channelsLimit, aiResponsesLimit } });

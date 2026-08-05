@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { CurrentPrincipal, Protected } from "./security";
-import { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, InviteMemberDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto, UpdateMemberRoleDto } from "./resource.dto";
+import { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, InviteMemberDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto, UpdateMemberRoleDto, UpdateOrganizationDto } from "./resource.dto";
 import { ResourceService } from "./resource.service";
 import { ChannelProviderService } from "./channel-provider.service";
 
@@ -14,6 +14,7 @@ export class ResourcesController {
   constructor(@Inject(ResourceService) private readonly resources: ResourceService, @Inject(ChannelProviderService) private readonly channels: ChannelProviderService) {}
 
   @Get("organization/current") @Protected(...ALL) organization(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.currentOrganization(principal); }
+  @Patch("organization/current") @Protected(...ADMINS) updateOrganization(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: UpdateOrganizationDto) { return this.resources.updateOrganization(principal, dto); }
   @Get("dashboard") @Protected(...MANAGERS) dashboard(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.dashboard(principal); }
   @Get("team/members") @Protected(...ADMINS) teamMembers(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.teamMembers(principal); }
   @Post("team/members") @Protected(...ADMINS) inviteMember(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: InviteMemberDto) { return this.resources.inviteMember(principal, dto); }
@@ -32,6 +33,7 @@ export class ResourcesController {
   @Get("conversations") @Protected(...ALL) conversations(@CurrentPrincipal() principal: AuthPrincipal, @Query() query: PageQueryDto) { return this.resources.conversations(principal, query); }
   @Get("conversations/:id") @Protected(...ALL) conversation(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.conversation(principal, id); }
   @Post("conversations/:id/messages") @Protected(...ALL) sendMessage(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string, @Body() dto: SendMessageDto) { return this.resources.sendMessage(principal, id, dto); }
+  @Post("conversations/:id/ai-reply") @Protected(...ALL) aiReply(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.aiReply(principal, id); }
   @Post("conversations/:id/take") @Protected(...ALL) takeConversation(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.takeConversation(principal, id); }
   @Post("conversations/:id/return-to-ai") @Protected(...ALL) returnConversationToAi(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.returnConversationToAi(principal, id); }
   @Post("conversations/:id/close") @Protected(...ALL) closeConversation(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.closeConversation(principal, id); }
@@ -54,4 +56,6 @@ export class ResourcesController {
 
   @Get("ai-usage") @Protected(...ADMINS) aiUsage(@CurrentPrincipal() principal: AuthPrincipal, @Query() query: PageQueryDto) { return this.resources.aiUsage(principal, query); }
   @Get("audit") @Protected(...ADMINS) audit(@CurrentPrincipal() principal: AuthPrincipal, @Query() query: PageQueryDto) { return this.resources.auditLogs(principal, query); }
+  @Get("security/sessions") @Protected(...ADMINS) sessions(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.activeSessions(principal); }
+  @Post("security/sessions/revoke-others") @Protected(...ADMINS) revokeOtherSessions(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.revokeOtherSessions(principal); }
 }

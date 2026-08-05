@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Post } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Inject, Post, Req } from "@nestjs/common";
 import type { AuthPrincipal } from "../../../../packages/shared/src/index";
 import { AllowInactiveSubscription, CurrentPrincipal, Protected } from "../security";
 import { BillingProviderService } from "./billing-provider.service";
@@ -16,5 +16,6 @@ export class BillingController {
   @Get("subscription") @Protected(...ADMINS) subscription(@CurrentPrincipal() principal: AuthPrincipal) { return this.billing.currentSubscription(principal); }
   @Get("usage") @Protected(...ADMINS) usage(@CurrentPrincipal() principal: AuthPrincipal) { return this.billing.usage(principal); }
   @Post("checkout") @Protected(...ADMINS) checkout(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: CheckoutDto) { return this.billing.createCheckout(principal, dto.planPriceId); }
+  @Post("stripe/webhook") stripeWebhook(@Req() request: any, @Headers("stripe-signature") signature = "") { return this.billing.handleStripeWebhook(request.rawBody ?? Buffer.from(JSON.stringify(request.body ?? {})), signature); }
   @Post("simulate") @Protected(...ADMINS) simulate(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: BillingMockActionDto) { return this.provider.simulate(principal, dto.action, dto.planPriceId); }
 }

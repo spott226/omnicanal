@@ -2,7 +2,7 @@ import { Body, Controller, Get, Inject, Post, Res, UseGuards } from "@nestjs/com
 import type { Response } from "express";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { AuthService } from "./auth.service";
-import { LoginDto, RegisterDto, SelectOrganizationDto } from "./auth.dto";
+import { ForgotPasswordDto, LoginDto, RegisterDto, ResetPasswordDto, SelectOrganizationDto } from "./auth.dto";
 import { CsrfGuard, CurrentPrincipal, SessionGuard } from "./security";
 
 @Controller("auth")
@@ -13,5 +13,6 @@ export class AuthController {
   @Get("session") @UseGuards(SessionGuard) session(@CurrentPrincipal() principal: AuthPrincipal) { return principal; }
   @Post("select-organization") @UseGuards(SessionGuard, CsrfGuard) select(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: SelectOrganizationDto, @Res({ passthrough: true }) response: Response) { return this.auth.selectOrganization(principal, dto, response); }
   @Post("logout") @UseGuards(SessionGuard, CsrfGuard) logout(@CurrentPrincipal() principal: AuthPrincipal, @Res({ passthrough: true }) response: Response) { return this.auth.logout(principal, response); }
-  @Post("forgot-password") forgotPassword() { return { ok: true, message: "Si la cuenta existe, recibirá instrucciones." }; }
+  @Post("forgot-password") forgotPassword(@Body() dto: ForgotPasswordDto) { return this.auth.forgotPassword(dto); }
+  @Post("reset-password") resetPassword(@Body() dto: ResetPasswordDto) { return this.auth.resetPassword(dto); }
 }

@@ -1,15 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { PrismaService } from "./prisma.service";
 
 type ChannelKey = "INSTAGRAM" | "WHATSAPP" | "FACEBOOK";
-type ChannelStatus = "NOT_CONNECTED" | "CONFIGURING" | "CONNECTED_MOCK" | "ERROR" | "TOKEN_EXPIRED";
+type ChannelStatus = "NOT_CONNECTED" | "CONFIGURING" | "CONNECTED" | "CONNECTED_MOCK" | "ERROR" | "TOKEN_EXPIRED" | "PENDING";
 
 const CHANNELS: ChannelKey[] = ["INSTAGRAM", "WHATSAPP", "FACEBOOK"];
 const LABELS: Record<ChannelKey, string> = { INSTAGRAM: "Instagram", WHATSAPP: "WhatsApp", FACEBOOK: "Facebook" };
 
 @Injectable()
 export class ChannelProviderService {
-  constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
+  constructor(@Inject(ConfigService) private readonly config: ConfigService, @Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   mode() {
     return (this.config.get<string>("CHANNEL_PROVIDER_MODE") ?? "mock").toLowerCase();
@@ -17,11 +18,20 @@ export class ChannelProviderService {
 
   list() {
     const mode = this.mode();
+    if (mode === "meta") {
+      return this.instagramConnection().then((instagram) => CHANNELS.map((channel) => {
+        if (channel === "INSTAGRAM" && instagram) return this.item(channel, "CONNECTED", mode, instagram.username || instagram.externalAccountId || "Cuenta Instagram conectada");
+        if (channel === "WHATSAPP") return this.item(channel, "PENDING", mode, "WhatsApp pendiente");
+        return this.item(channel, "CONFIGURING", mode, channel === "FACEBOOK" ? "Facebook pendiente" : "Sin cuenta conectada");
+      }));
+    }
     return CHANNELS.map((channel, index) => this.item(channel, index === 2 ? "CONFIGURING" : "CONNECTED_MOCK", mode));
   }
 
   connect(channel: ChannelKey) {
-    return this.item(channel, "CONNECTED_MOCK", this.mode());
+    const mode = this.mode();
+    if (mode === "meta") return this.item(channel, channel === "WHATSAPP" ? "PENDING" : "CONFIGURING", mode);
+    return this.item(channel, "CONNECTED_MOCK", mode);
   }
 
   disconnect(channel: ChannelKey) {
@@ -34,14 +44,14 @@ export class ChannelProviderService {
     return { ...this.item(channel, status, mode), ok: mode === "mock", message: mode === "mock" ? "Evento mock recibido correctamente. No se llamo a Meta." : "Proveedor real pendiente de configuracion." };
   }
 
-  private item(channel: ChannelKey, status: ChannelStatus, mode: string) {
+  private item(channel: ChannelKey, status: ChannelStatus, mode: string, accountLabel?: string) {
     return {
       channel,
       label: LABELS[channel],
       provider: mode,
       status,
       isMock: mode === "mock",
-      accountLabel: channel === "INSTAGRAM" ? "@mercadia_mock" : channel === "WHATSAPP" ? "+52 55 0000 2026" : "Mercadia Mock Page",
+      accountLabel: accountLabel ?? (mode === "mock" ? (channel === "INSTAGRAM" ? "@mercadia_mock" : channel === "WHATSAPP" ? "+52 55 0000 2026" : "Mercadia Mock Page") : "Sin cuenta conectada"),
       lastSyncAt: new Date().toISOString(),
       message: this.message(status),
     };
@@ -51,9 +61,20 @@ export class ChannelProviderService {
     return {
       NOT_CONNECTED: "Canal no conectado.",
       CONFIGURING: "Canal en configuracion mock.",
+      CONNECTED: "Canal conectado con proveedor real.",
       CONNECTED_MOCK: "Canal conectado en modo mock. No usa cuentas reales.",
+      PENDING: "Canal pendiente para una fase posterior.",
       ERROR: "Canal con error de configuracion.",
       TOKEN_EXPIRED: "Token vencido. Requiere reconexion.",
     }[status];
+  }
+
+  private async instagramConnection() {
+    const organizationId = this.config.get<string>("META_ORGANIZATION_ID")?.trim();
+    if (!organizationId) return null;
+    return (this.prisma as any).metaConnection.findUnique({
+      where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
+      select: { status: true, externalAccountId: true, username: true },
+    }).then((connection: { status: string; externalAccountId?: string | null; username?: string | null } | null) => connection?.status === "CONNECTED" ? connection : null);
   }
 }

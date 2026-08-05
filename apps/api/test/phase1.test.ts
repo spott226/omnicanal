@@ -26,15 +26,20 @@ test("valida variables obligatorias y rechaza secretos débiles", () => {
   assert.equal(realModes.AI_PROVIDER_MODE, "openai");
   assert.equal(realModes.CHANNEL_PROVIDER_MODE, "meta");
   assert.equal(realModes.BILLING_PROVIDER_MODE, "stripe");
+  const localMode = validateEnvironment({ DATABASE_URL: "postgresql://nexoia:nexoia@localhost:5432/nexoia", REDIS_URL: "redis://localhost:6379", JWT_SECRET: "x".repeat(32), SESSION_SECRET: "y".repeat(32), APP_ENCRYPTION_KEY: "z".repeat(32), FRONTEND_URL: "http://localhost:3000", BACKEND_URL: "http://localhost:3001", CORS_ORIGIN: "http://localhost:3000", AI_PROVIDER_MODE: "local" });
+  assert.equal(localMode.AI_PROVIDER_MODE, "local");
+  assert.equal(localMode.LOCAL_AI_BASE_URL, "http://localhost:11434");
+  assert.equal(localMode.LOCAL_AI_MODEL, "qwen2.5:3b");
 });
 
-test("backend bloquea crear contactos cuando el plan ya llego al limite", async () => {
+test("backend no bloquea crear contactos por limite de conversaciones", async () => {
   const fake: any = {
     subscription: { findFirst: async () => ({ planPrice: { monthlyContactsLimit: 1 } }) },
-    contact: { count: async () => 1, create: async () => { throw new Error("no debe crear"); } },
+    contact: { create: async ({ data }: any) => data },
   };
   const service = new ResourceService(fake);
-  await assert.rejects(() => service.createContact(principalA, { firstName: "Nuevo" }), /limite de contactos/);
+  const result = await service.createContact(principalA, { firstName: "Nuevo" });
+  assert.equal(result.firstName, "Nuevo");
 });
 
 test("equipo crea membresias persistentes y respeta limite de usuarios", async () => {
@@ -84,13 +89,70 @@ test("conversaciones permiten tomar, devolver a IA y cerrar con auditoria", asyn
   assert.equal(messages.length, 3);
 });
 
+test("conversaciones normaliza paginacion aunque llegue incompleta", async () => {
+  const calls: any[] = [];
+  const fake: any = {
+    conversation: {
+      findMany: async (args: any) => { calls.push(args); return []; },
+      count: async () => 0,
+    },
+  };
+  const service = new ResourceService(fake);
+  const result = await service.conversations(principalA, { page: undefined, pageSize: undefined, sort: "desc" } as any);
+  assert.equal(result.total, 0);
+  assert.equal(calls[0].skip, 0);
+  assert.equal(calls[0].take, 25);
+});
+
 test("proveedor IA mock responde con configuracion del negocio", async () => {
   const service = new AIProviderService({ get: () => "mock" } as any);
-  const result = service.simulate({ agentName: "Nia", businessName: "Mercadia Ops", prompt: "Haz una pregunta por mensaje", message: "hola", turn: 0 });
+  const result = await service.simulate({ agentName: "Nia", businessName: "Mercadia Ops", prompt: "Haz una pregunta por mensaje", message: "hola", turn: 0 });
   assert.equal(result.provider, "mock");
-  assert.equal(result.model, "nexo-mock-v1");
+  assert.equal(result.model, "local-test");
   assert.match(result.reply, /Mercadia Ops/);
   assert.match(result.reply, /Nia/);
+});
+
+test("proveedor IA local usa Ollama sin claves pagadas", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  let requestedBody: any;
+  globalThis.fetch = (async (url: any, init: any) => {
+    requestedUrl = String(url);
+    requestedBody = JSON.parse(String(init.body));
+    return new Response(JSON.stringify({ message: { content: "Respuesta local de prueba" } }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as any;
+  try {
+    const config = { get: (key: string) => ({ AI_PROVIDER_MODE: "local", LOCAL_AI_BASE_URL: "http://localhost:11434", LOCAL_AI_MODEL: "qwen2.5:3b" } as Record<string, string>)[key] } as any;
+    const result = await new AIProviderService(config).simulate({ agentName: "Nia", businessName: "Mercadia Ops", prompt: "Usa contexto", message: "hola", turn: 0 });
+    assert.equal(requestedUrl, "http://localhost:11434/api/chat");
+    assert.equal(requestedBody.model, "qwen2.5:3b");
+    assert.equal(result.provider, "local");
+    assert.equal(result.reply, "Respuesta local de prueba");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("simulador de IA alimenta el modelo con conocimiento real del negocio", async () => {
+  const captured: any[] = [];
+  const fake: any = {
+    organization: { findUniqueOrThrow: async () => ({ name: "Spa Luna", timezone: "America/Mexico_City", industry: "Spa", website: "https://spaluna.mx", description: "Spa de masajes y faciales" }) },
+    prompt: { findFirst: async () => ({ agentName: "Sofia", publishedVersion: { content: "Responde breve y agenda cuando aplique" }, versions: [] }) },
+    faq: { findMany: async () => [{ question: "¿Aceptan tarjeta?", answer: "Sí, aceptamos tarjeta y transferencia." }] },
+    product: { findMany: async () => [{ sku: "CREMA-01", name: "Crema hidratante", description: "Crema facial", price: { toString: () => "450" }, currency: "MXN" }] },
+    service: { findMany: async () => [{ code: "MASAJE-60", name: "Masaje relajante", description: "Sesión relajante", price: { toString: () => "900" }, currency: "MXN", durationMinutes: 60 }] },
+    promotion: { findMany: async () => [{ code: "BIENVENIDA", name: "Promo bienvenida", description: "10% en primera cita", discountType: "PERCENTAGE", discountValue: { toString: () => "10" }, startsAt: new Date("2026-01-01T00:00:00.000Z"), endsAt: new Date("2026-12-31T00:00:00.000Z") }] },
+    businessSchedule: { findMany: async () => [{ name: "Horario principal", timezone: "America/Mexico_City", entries: [{ dayOfWeek: "MONDAY", opensAt: "09:00", closesAt: "18:00", closed: false }] }] },
+    policy: { findMany: async () => [{ type: "CUSTOM", title: "Citas", content: "Llega 10 minutos antes de tu cita.", version: 1 }] },
+  };
+  const aiProvider: any = { simulate: async (input: any) => { captured.push(input); return { provider: "local", model: "qwen2.5:3b", agentName: input.agentName, reply: "ok" }; } };
+  await new ResourceService(fake, aiProvider).simulateAi(principalA, { message: "¿Que servicios tienen?", turn: 0 });
+  assert.match(captured[0].knowledgeContext, /Spa Luna/);
+  assert.match(captured[0].knowledgeContext, /Masaje relajante/);
+  assert.match(captured[0].knowledgeContext, /Crema hidratante/);
+  assert.match(captured[0].knowledgeContext, /10 minutos antes/);
+  assert.match(captured[0].knowledgeContext, /Horario principal/);
 });
 
 test("proveedor de canales mock no llama Meta y expone estados claros", () => {
@@ -157,11 +219,36 @@ test("rutas de tenant exigen organización seleccionada", () => {
 
 test("guard de suscripcion permite trial vigente y bloquea trial vencido", async () => {
   const reflector: any = { getAllAndOverride: () => false };
-  const fake: any = { subscription: { findFirst: async ({ where }: any) => ({ organizationId: where.organizationId, status: "TRIALING", trialEndsAt: where.organizationId === "org-a" ? new Date(Date.now() + 86_400_000) : new Date(Date.now() - 86_400_000), planPrice: { plan: "PRO" } }) } };
+  const fake: any = {
+    subscription: { findFirst: async ({ where }: any) => ({ organizationId: where.organizationId, status: "TRIALING", trialEndsAt: where.organizationId === "org-a" ? new Date(Date.now() + 86_400_000) : new Date(Date.now() - 86_400_000), currentPeriodStartsAt: new Date(Date.now() - 86_400_000), planPrice: { plan: "PRO" } }) },
+    conversation: { count: async () => 0 },
+  };
   const guard = new SubscriptionGuard(reflector, fake);
   const context = (principal: AuthPrincipal) => ({ switchToHttp: () => ({ getRequest: () => ({ principal }) }), getHandler: () => "handler", getClass: () => "class" }) as any;
   assert.equal(await guard.canActivate(context(principalA)), true);
   await assert.rejects(() => guard.canActivate(context({ ...principalA, organizationId: "org-expired" })), /trial vencido|incompleta/i);
+});
+
+test("guard de suscripcion bloquea trial al llegar a 20 conversaciones", async () => {
+  const reflector: any = { getAllAndOverride: () => false };
+  const fake: any = {
+    subscription: { findFirst: async ({ where }: any) => ({ organizationId: where.organizationId, status: "TRIALING", trialEndsAt: new Date(Date.now() + 86_400_000), currentPeriodStartsAt: new Date(Date.now() - 86_400_000), planPrice: { plan: "PRO" } }) },
+    conversation: { count: async () => 20 },
+  };
+  const guard = new SubscriptionGuard(reflector, fake);
+  const context = (principal: AuthPrincipal) => ({ switchToHttp: () => ({ getRequest: () => ({ principal }) }), getHandler: () => "handler", getClass: () => "class" }) as any;
+  await assert.rejects(() => guard.canActivate(context(principalA)), /20 conversaciones|Activa un plan/i);
+});
+
+test("guard de suscripcion bloquea plan activo al llegar al limite de conversaciones", async () => {
+  const reflector: any = { getAllAndOverride: () => false };
+  const fake: any = {
+    subscription: { findFirst: async () => ({ status: "ACTIVE", currentPeriodStartsAt: new Date(Date.now() - 86_400_000), planPrice: { monthlyContactsLimit: 3 } }) },
+    conversation: { count: async () => 3 },
+  };
+  const guard = new SubscriptionGuard(reflector, fake);
+  const context = { switchToHttp: () => ({ getRequest: () => ({ principal: principalA }) }), getHandler: () => "handler", getClass: () => "class" } as any;
+  await assert.rejects(() => guard.canActivate(context), /L[ií]mite de conversaciones/);
 });
 
 test("guard de suscripcion permite rutas de billing aunque el trial este vencido", async () => {

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { CHANNEL_DATA, DAILY_CHANNELS, DEMO_AUTOMATIONS, FUNNEL, channelPercentageTotal, hasNegativeDailyValue, hotLeadToAppointmentRate, newLeadToAppointmentRate } from "../app/demo-data.ts";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -10,97 +9,103 @@ async function render() {
   return worker.fetch(new Request("http://localhost/", { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("renderiza el acceso conectado de next.io", async () => {
+test("renderiza pagina publica profesional de next.io", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>next\.io by Mercadia — AI customer ops<\/title>/i);
-  assert.match(html, /Inicia sesión en next\.io/);
-  assert.doesNotMatch(html, /demo@nexoia\.local|NexoDemo2026!/);
-  assert.match(html, /autoComplete="off"/);
-  assert.match(html, /Acceso conectado/);
-  assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
+  assert.match(html, /<title>next\.io by Mercadia/i);
+  assert.match(html, /SAAS OMNICANAL CON IA/);
+  assert.match(html, /Empezar prueba gratis/);
+  assert.match(html, /Servicios/);
+  assert.match(html, /Precios/);
+  assert.doesNotMatch(html, /demo@nexoia\.local|NexoDemo2026!|Your site is taking shape/);
 });
 
-test("el inicio de sesión no permite entrar mediante un fallback local", async () => {
+test("login, registro y recuperacion usan API real", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
   const apiClient = await readFile(new URL("../app/api-client.ts", import.meta.url), "utf8");
-  assert.match(app, /await api\.login\(email,password\); setLoggedIn\(true\)/);
-  assert.match(apiClient, /register:/);
-  assert.match(app, /Crear cuenta/);
-  assert.match(app, /Iniciar prueba gratis/);
+  assert.match(app, /await api\.login\(email,password,remember\); setLoggedIn\(true\)/);
+  assert.match(app, /await api\.register\(data\); setLoggedIn\(true\)/);
   assert.match(app, /await api\.logout\(\)/);
-  assert.match(app, /Cerrar sesión/);
-  assert.doesNotMatch(app, /setRuntimeMode\("demo"\)/);
-  assert.doesNotMatch(app, /useState\("demo@nexoia\.local"\)|useState\("NexoDemo2026!"\)/);
-  assert.doesNotMatch(app, /esta cuenta conserva la demo local/);
+  assert.match(app, /Olvid/);
+  assert.match(apiClient, /forgotPassword/);
+  assert.match(apiClient, /resetPassword/);
+  assert.doesNotMatch(apiClient, /aurea-labs-demo/);
+  assert.doesNotMatch(app, /demo@nexoia\.local|NexoDemo2026!|setRuntimeMode\("demo"\)/);
 });
 
-test("incluye los flujos críticos de la preview", async () => {
+test("mantiene menu MVP y pantallas publicas", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
   for (const label of ["Inicio", "Conversaciones", "Contactos", "Entrenar IA", "Base de conocimiento", "Productos y servicios", "Conexiones", "Equipo", "Plan y facturación", "Configuración"]) assert.match(app, new RegExp(label));
-  assert.match(app, /initialConversations/);
-  assert.match(app, /Proveedor simulado/);
-  assert.match(app, /Agendar videollamada/);
-  assert.match(app, /Modo demostración/);
+  for (const label of ["PublicSite", "Servicios", "Precios", "Empezar prueba gratis"]) assert.match(app, new RegExp(label));
 });
 
 test("incluye UI y cliente API para Knowledge Base", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
   const apiClient = await readFile(new URL("../app/api-client.ts", import.meta.url), "utf8");
   for (const label of ["FAQs", "Productos", "Servicios", "Promociones", "Horarios", "Políticas"]) assert.match(app, new RegExp(label));
-  assert.match(app, /knowledgeConfig/);
   assert.match(apiClient, /knowledgeList/);
   assert.match(apiClient, /knowledgeCreate/);
   assert.match(apiClient, /knowledgeUpdate/);
   assert.match(apiClient, /knowledgeDelete/);
+  assert.match(app, /await load\(kind,""\)/);
+  assert.match(app, /setSearch\(""\);setKind\(item\)/);
+  assert.match(app, /Nuevo \{config\.singular \?\? config\.label\}/);
 });
 
-test("incluye facturación, trial de 7 días y preparación de Stripe", async () => {
+test("incluye facturacion, trial de 7 dias y preparacion de Stripe", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
   const apiClient = await readFile(new URL("../app/api-client.ts", import.meta.url), "utf8");
-  assert.match(app, /PRUEBA ACTIVA DE 7 DÍAS/);
-  assert.match(app, /Stripe Checkout/);
+  assert.match(app, /PRUEBA ACTIVA/);
+  assert.match(app, /Checkout Stripe/);
   assert.match(app, /billingCheckout/);
   assert.match(apiClient, /billingPlans/);
   assert.match(apiClient, /billingSubscription/);
   assert.match(apiClient, /billingUsage/);
 });
 
-test("mantiene métricas y embudo matemáticamente consistentes", () => {
-  assert.equal(channelPercentageTotal, 100);
-  assert.equal(Object.values(CHANNEL_DATA).reduce((sum, channel) => sum + channel.count, 0), 1284);
-  assert.equal(newLeadToAppointmentRate, 3.5);
-  assert.equal(hotLeadToAppointmentRate, 13.5);
-  assert.deepEqual(FUNNEL.map(stage => stage.value), [...FUNNEL].map(stage => stage.value).sort((a,b)=>b-a));
+test("inicio y estadisticas no dependen de datos inventados", async () => {
+  const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /const initialConversations: Conversation\[\] = \[\]/);
+  assert.match(app, /conversations = realMetrics\?\.conversations \?\? 0/);
+  assert.match(app, /Sin actividad/);
+  assert.doesNotMatch(app, /DEMO_METRICS|DAILY_CHANNELS|CHANNEL_DATA|org_aurea_labs_demo|Mariana|Carlos alcanz/);
 });
 
-test("la gráfica solo recibe segmentos positivos que suman su total", () => {
-  assert.equal(hasNegativeDailyValue, false);
-  assert.equal(DAILY_CHANNELS.length, 14);
-  for (const day of DAILY_CHANNELS) assert.equal(day.instagram + day.whatsapp + day.facebook, day.total);
-});
-
-test("incluye filtros y acciones interactivas de conversaciones", async () => {
+test("conversaciones conservan filtros y acciones interactivas", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
   for (const value of ["IA activa", "Pausadas", "Humano", "Con cita", "Clasificación cambiada", "Recordatorio programado", "Nota guardada"]) assert.match(app, new RegExp(value));
   assert.match(app, /transferred:!active\.transferred/);
   assert.match(app, /ai:!active\.ai/);
-  assert.match(app, /organizationId:"org_aurea_labs_demo"/);
 });
 
-test("incluye prompt, laboratorio contextual y automatización VIP", async () => {
+test("equipo y canales usan API sin cuentas ficticias", async () => {
+  const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /api\.teamMembers/);
+  assert.match(app, /api\.teamInvite/);
+  assert.match(app, /api\.channels/);
+  assert.match(app, /Sin cuenta conectada/);
+  assert.doesNotMatch(app, /mercadia_mock|Mercadia Mock Page|\+52 55 0000 2026/);
+});
+
+test("laboratorio y prompt no usan negocio ficticio", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
   assert.match(app, /Prompt general/);
   assert.match(app, /tokens aproximados/);
-  assert.match(app, /userTurns/);
-  assert.match(app, /Simulación completada/);
-  assert.ok(DEMO_AUTOMATIONS.some(rule => rule.trigger.includes("VIP") && rule.action === "Enviar mensaje privado"));
+  assert.match(app, /Sin configurar/);
+  assert.doesNotMatch(app, /Áurea Labs|aurealabs|Proveedor simulado|Datos simulados/);
 });
 
-test("la sesión visual permanece conectada a datos persistentes", async () => {
+test("la sesion visual permanece conectada a datos persistentes", async () => {
   const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /Datos persistentes · API/);
-  assert.doesNotMatch(app, /Restablecer todos los datos de demostración/);
+  assert.match(app, /Datos reales/);
+  assert.doesNotMatch(app, /Restablecer todos los datos de demostraci/);
+});
+
+test("la interfaz no contiene residuos de codificacion rota", async () => {
+  const app = await readFile(new URL("../app/NexoApp.tsx", import.meta.url), "utf8");
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /Ã|Â|â|ð|ï¼|localstrativa|localstraci|ficticia|ficticio/);
+  assert.doesNotMatch(css, /Ã|Â|â|ð|ï¼/);
 });

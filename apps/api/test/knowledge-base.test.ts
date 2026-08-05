@@ -10,9 +10,10 @@ const page = { page: 1, pageSize: 10, search: "consulta", sort: "desc" as const 
 
 test("Knowledge Base pagina, busca y aísla resultados por organización", async () => {
   let receivedWhere: any;
+  let receivedTake: any;
   const fake: any = {
     product: {
-      findMany: async ({ where }: any) => { receivedWhere = where; return [{ id: "product-a" }]; },
+      findMany: async ({ where, take }: any) => { receivedWhere = where; receivedTake = take; return [{ id: "product-a" }]; },
       count: async () => 1,
     },
   };
@@ -20,7 +21,23 @@ test("Knowledge Base pagina, busca y aísla resultados por organización", async
   assert.equal(receivedWhere.organizationId, "org-a");
   assert.equal(receivedWhere.deletedAt, null);
   assert.equal(receivedWhere.OR.length, 3);
+  assert.equal(receivedTake, 10);
   assert.deepEqual(result, { items: [{ id: "product-a" }], total: 1, page: 1, pageSize: 10, pages: 1 });
+});
+
+test("Knowledge Base normaliza pageSize string antes de consultar Prisma", async () => {
+  let receivedTake: any;
+  let receivedSkip: any;
+  const fake: any = {
+    product: {
+      findMany: async ({ take, skip }: any) => { receivedTake = take; receivedSkip = skip; return []; },
+      count: async () => 0,
+    },
+  };
+  const result = await new KnowledgeBaseService(fake).listProducts(principal, { page: "1", pageSize: "25", sort: "desc" } as any);
+  assert.equal(receivedTake, 25);
+  assert.equal(receivedSkip, 0);
+  assert.equal(result.pageSize, 25);
 });
 
 test("Knowledge Base impide consultar un registro de otra organización", async () => {
@@ -56,6 +73,28 @@ test("horarios rechazan días repetidos e intervalos inválidos", async () => {
   const service = new KnowledgeBaseService({} as any);
   await assert.rejects(() => service.createSchedule(principal, { name: "Principal", timezone: "America/Mexico_City", entries: [{ dayOfWeek: "MONDAY", opensAt: "09:00", closesAt: "18:00" }, { dayOfWeek: "MONDAY", closed: true }] }), /repetir un día/i);
   await assert.rejects(() => service.createSchedule(principal, { name: "Principal", timezone: "America/Mexico_City", entries: [{ dayOfWeek: "TUESDAY", opensAt: "18:00", closesAt: "09:00" }] }), /posterior/i);
+});
+
+test("politicas asignan siguiente version para evitar choque por tipo", async () => {
+  let createdData: any;
+  const tx: any = {
+    policy: {
+      findFirst: async ({ where }: any) => {
+        assert.equal(where.organizationId, "org-a");
+        assert.equal(where.type, "CUSTOM");
+        assert.equal(where.deletedAt, undefined);
+        return { version: 1 };
+      },
+      create: async ({ data }: any) => { createdData = data; return { id: "policy-a", ...data }; },
+    },
+    auditLog: { create: async () => ({}) },
+  };
+  const fake: any = {
+    $transaction: async (callback: any) => callback(tx),
+  };
+  const result = await new KnowledgeBaseService(fake).createPolicy(principal, { type: "CUSTOM", title: "Politica", content: "Contenido", version: 1 });
+  assert.equal(createdData.version, 2);
+  assert.equal(result.version, 2);
 });
 
 test("la migración de Knowledge Base contiene los seis módulos y soft delete", () => {

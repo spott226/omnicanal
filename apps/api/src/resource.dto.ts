@@ -1,4 +1,5 @@
-import { IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
+import { IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsObject, IsOptional, IsString, IsUrl, IsUUID, Max, MaxLength, Min } from "class-validator";
+import { Type } from "class-transformer";
 const CHANNELS = ["INSTAGRAM", "WHATSAPP", "FACEBOOK"] as const;
 const TEMPERATURES = ["COLD", "WARM", "HOT"] as const;
 const TRIGGER_TYPES = ["KEYWORD", "LEAD_SCORE", "APPOINTMENT", "NO_RESPONSE", "MANUAL"] as const;
@@ -11,8 +12,8 @@ type ReminderTypeValue = (typeof REMINDER_TYPES)[number];
 type TeamRoleValue = (typeof TEAM_ROLES)[number];
 
 export class PageQueryDto {
-  @IsOptional() @IsInt() @Min(1) page = 1;
-  @IsOptional() @IsInt() @Min(1) @Max(100) pageSize = 25;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize = 25;
   @IsOptional() @IsString() @MaxLength(120) search?: string;
   @IsOptional() @IsString() @MaxLength(30) sort = "desc";
 }
@@ -38,3 +39,13 @@ export class AppointmentDto { @IsUUID() contactId!: string; @IsOptional() @IsUUI
 export class ReminderDto { @IsUUID() contactId!: string; @IsOptional() @IsUUID() conversationId?: string; @IsDateString() scheduledAt!: string; @IsEnum(REMINDER_TYPES) type!: ReminderTypeValue; }
 export class InviteMemberDto { @IsString() @MaxLength(120) name!: string; @IsEmail() email!: string; @IsEnum(TEAM_ROLES) role!: TeamRoleValue; }
 export class UpdateMemberRoleDto { @IsEnum(TEAM_ROLES) role!: TeamRoleValue; }
+
+export class UpdateOrganizationDto {
+  @IsOptional() @IsString() @MaxLength(140) name?: string;
+  @IsOptional() @IsString() @MaxLength(100) timezone?: string;
+  @IsOptional() @IsString() @MaxLength(120) industry?: string;
+  @IsOptional() @IsUrl({ require_protocol: true }) @MaxLength(300) website?: string;
+  @IsOptional() @IsString() @MaxLength(4000) description?: string;
+  @IsOptional() @IsObject() notificationSettings?: Record<string, unknown>;
+  @IsOptional() @IsObject() securitySettings?: Record<string, unknown>;
+}

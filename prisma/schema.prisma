@@ -178,6 +178,12 @@ model Organization {
   status              OrganizationStatus  @default(ACTIVE)
   mode                OrganizationMode    @default(LIVE)
   plan                Plan                @default(STARTER)
+  timezone            String              @default("America/Mexico_City")
+  industry            String?
+  website             String?
+  description         String?             @db.Text
+  notificationSettings Json?
+  securitySettings    Json?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   memberships         Membership[]
@@ -205,6 +211,8 @@ model Organization {
   policies            Policy[]
   subscriptions       Subscription[]
   billingEvents       BillingEvent[]
+  metaWebhookEvents   MetaWebhookEvent[]
+  metaConnections     MetaConnection[]
 }
 
 model User {
@@ -543,6 +551,48 @@ model BillingEvent {
 
   @@index([organizationId, createdAt])
   @@unique([provider, providerEventId])
+}
+
+model MetaWebhookEvent {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String?      @db.Uuid
+  object         String
+  senderId       String?
+  recipientId    String?
+  messageId      String?
+  channel        Channel?
+  timestamp      DateTime?
+  rawPayload     Json
+  processedAt    DateTime?
+  ignoredReason  String?
+  createdAt      DateTime     @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@unique([messageId])
+  @@index([organizationId, createdAt])
+  @@index([object, createdAt])
+  @@index([senderId])
+}
+
+model MetaConnection {
+  id                   String       @id @default(uuid()) @db.Uuid
+  organizationId       String       @db.Uuid
+  provider             String       @default("INSTAGRAM")
+  externalAccountId    String?
+  username             String?
+  accessTokenEncrypted String?      @db.Text
+  tokenType            String?
+  scopes               Json?
+  expiresAt            DateTime?
+  status               String       @default("CONNECTED")
+  lastError            String?      @db.Text
+  connectedAt          DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([organizationId, status])
 }
 
 model KnowledgeCategory {

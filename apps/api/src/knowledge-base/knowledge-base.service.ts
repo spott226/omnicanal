@@ -31,11 +31,21 @@ export class KnowledgeBaseService {
   }
 
   private paging(query: KnowledgePageQueryDto) {
-    return { skip: (query.page - 1) * query.pageSize, take: query.pageSize };
+    const page = this.normalizedPage(query);
+    return { skip: (page.page - 1) * page.pageSize, take: page.pageSize };
   }
 
   private page<T>(items: T[], total: number, query: KnowledgePageQueryDto) {
-    return { items, total, page: query.page, pageSize: query.pageSize, pages: Math.ceil(total / query.pageSize) };
+    const page = this.normalizedPage(query);
+    return { items, total, page: page.page, pageSize: page.pageSize, pages: Math.ceil(total / page.pageSize) };
+  }
+
+  private normalizedPage(query: KnowledgePageQueryDto) {
+    const rawPage = Number(query.page);
+    const rawPageSize = Number(query.pageSize);
+    const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+    const pageSize = Number.isInteger(rawPageSize) && rawPageSize > 0 ? Math.min(rawPageSize, 100) : 25;
+    return { page, pageSize };
   }
 
   private async audit(db: Prisma.TransactionClient, principal: AuthPrincipal, action: string, entityType: string, entityId: string) {
@@ -197,10 +207,11 @@ export class KnowledgeBaseService {
   }
 
   async createPromotion(principal: AuthPrincipal, dto: CreatePromotionDto) {
-    this.validatePromotion(dto.discountType, dto.discountValue, dto.startsAt, dto.endsAt);
+    const discountValue = this.normalizeDiscountValue(dto.discountValue);
+    this.validatePromotion(dto.discountType, discountValue, dto.startsAt, dto.endsAt);
     const organizationId = this.organizationId(principal);
     return this.unique(() => this.prisma.$transaction(async (db) => {
-      const item = await db.promotion.create({ data: { ...dto, code: dto.code.trim().toUpperCase(), startsAt: new Date(dto.startsAt), endsAt: new Date(dto.endsAt), organizationId } });
+      const item = await db.promotion.create({ data: { ...dto, discountValue, code: dto.code.trim().toUpperCase(), startsAt: new Date(dto.startsAt), endsAt: new Date(dto.endsAt), organization: { connect: { id: organizationId } } } });
       await this.audit(db, principal, "KNOWLEDGE_PROMOTION_CREATED", "Promotion", item.id);
       return item;
     }));
@@ -208,9 +219,10 @@ export class KnowledgeBaseService {
 
   async updatePromotion(principal: AuthPrincipal, id: string, dto: UpdatePromotionDto) {
     const current = await this.getPromotion(principal, id);
-    this.validatePromotion(dto.discountType ?? current.discountType, dto.discountValue ?? Number(current.discountValue), dto.startsAt ?? current.startsAt.toISOString(), dto.endsAt ?? current.endsAt.toISOString());
+    const discountValue = dto.discountValue === undefined ? Number(current.discountValue) : this.normalizeDiscountValue(dto.discountValue);
+    this.validatePromotion(dto.discountType ?? current.discountType, discountValue, dto.startsAt ?? current.startsAt.toISOString(), dto.endsAt ?? current.endsAt.toISOString());
     return this.unique(() => this.prisma.$transaction(async (db) => {
-      const item = await db.promotion.update({ where: { id }, data: { ...dto, code: dto.code?.trim().toUpperCase(), startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined, endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined } });
+      const item = await db.promotion.update({ where: { id }, data: { ...dto, discountValue: dto.discountValue === undefined ? undefined : discountValue, code: dto.code?.trim().toUpperCase(), startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined, endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined } });
       await this.audit(db, principal, "KNOWLEDGE_PROMOTION_UPDATED", "Promotion", id);
       return item;
     }));
@@ -298,7 +310,10 @@ export class KnowledgeBaseService {
     const organizationId = this.organizationId(principal);
     await this.category(organizationId, dto.categoryId, "POLICY");
     return this.unique(() => this.prisma.$transaction(async (db) => {
-      const item = await db.policy.create({ data: { ...dto, organizationId } });
+      const latest = await db.policy.findFirst({ where: { organizationId, type: dto.type }, orderBy: { version: "desc" }, select: { version: true } });
+      const version = (latest?.version ?? 0) + 1;
+      const { version: _clientVersion, ...data } = dto;
+      const item = await db.policy.create({ data: { ...data, version, organizationId } });
       await this.audit(db, principal, "KNOWLEDGE_POLICY_CREATED", "Policy", item.id);
       return item;
     }));
@@ -318,6 +333,12 @@ export class KnowledgeBaseService {
   async deletePolicy(principal: AuthPrincipal, id: string) {
     await this.getPolicy(principal, id);
     return this.softDelete(principal, "Policy", id, (db) => db.policy.update({ where: { id }, data: { deletedAt: new Date(), active: false } }));
+  }
+
+  private normalizeDiscountValue(value: unknown) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) throw new BadRequestException("La promoción requiere un descuento numérico mayor a cero");
+    return parsed;
   }
 
   private validatePromotion(type: string, value: number, startsAt: string, endsAt: string) {

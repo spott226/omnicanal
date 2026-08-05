@@ -8,7 +8,7 @@ import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./http-exception.filter";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true }); const config = app.get(ConfigService);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true }); const config = app.get(ConfigService);
   app.setGlobalPrefix("api/v1");
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cookieParser());

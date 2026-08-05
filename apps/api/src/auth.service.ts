@@ -6,9 +6,11 @@ import { compare, hash } from "bcryptjs";
 import type { Response } from "express";
 import type { AuthPrincipal, AppRole } from "../../../packages/shared/src/index";
 import { PrismaService } from "./prisma.service";
-import type { LoginDto, RegisterDto, SelectOrganizationDto } from "./auth.dto";
+import type { ForgotPasswordDto, LoginDto, RegisterDto, ResetPasswordDto, SelectOrganizationDto } from "./auth.dto";
 
 type TokenPayload = { sub: string; sid: string; organizationId: string | null; role: AppRole };
+const TRIAL_DAYS = 7;
+const TRIAL_CONVERSATION_LIMIT = 20;
 
 @Injectable()
 export class AuthService {
@@ -21,7 +23,7 @@ export class AuthService {
     const planPrice = await (this.prisma as any).planPrice.findUnique({ where: { plan_interval: { plan: dto.plan, interval: dto.interval } } });
     if (!planPrice?.active) throw new ForbiddenException("El plan seleccionado no está disponible");
     const now = new Date();
-    const trialEndsAt = new Date(now.getTime() + 7 * 86_400_000);
+    const trialEndsAt = new Date(now.getTime() + TRIAL_DAYS * 86_400_000);
     const passwordHash = await hash(dto.password, 12);
     const baseSlug = this.slugify(dto.businessName);
     const result = await this.prisma.$transaction(async (tx) => {
@@ -31,7 +33,7 @@ export class AuthService {
       const sessionId = randomUUID();
       await tx.session.create({ data: { id: sessionId, userId: user.id, organizationId: organization.id, tokenHash: this.hash(sessionId), expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000) } });
       await (tx as any).subscription.create({ data: { organizationId: organization.id, planPriceId: planPrice.id, status: "TRIALING", trialStartedAt: now, trialEndsAt, currentPeriodStartsAt: now, currentPeriodEndsAt: trialEndsAt } });
-      await (tx as any).billingEvent.create({ data: { organizationId: organization.id, type: "TRIAL_STARTED_FROM_REGISTRATION", payload: { plan: dto.plan, interval: dto.interval, trialDays: 7 } } });
+      await (tx as any).billingEvent.create({ data: { organizationId: organization.id, type: "TRIAL_STARTED_FROM_REGISTRATION", payload: { plan: dto.plan, interval: dto.interval, trialDays: TRIAL_DAYS, trialConversationLimit: TRIAL_CONVERSATION_LIMIT } } });
       await tx.auditLog.create({ data: { organizationId: organization.id, userId: user.id, action: "ORGANIZATION_REGISTERED", entityType: "Organization", entityId: organization.id } });
       return { user, organization, sessionId };
     });
@@ -49,10 +51,35 @@ export class AuthService {
     if (membership.organization.status !== "ACTIVE") throw new ForbiddenException("La organización está deshabilitada");
     const sessionId = randomUUID();
     const organizationId = membership.role === "SUPER_ADMIN" ? null : membership.organizationId;
-    await this.prisma.session.create({ data: { id: sessionId, userId: user.id, organizationId, tokenHash: this.hash(sessionId), expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000) } });
+    const sessionTtl = dto.remember ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000;
+    await this.prisma.session.create({ data: { id: sessionId, userId: user.id, organizationId, tokenHash: this.hash(sessionId), expiresAt: new Date(Date.now() + sessionTtl) } });
     const token = await this.sign({ sub: user.id, sid: sessionId, organizationId, role: membership.role });
-    this.setCookies(response, token);
+    this.setCookies(response, token, sessionTtl);
     return { user: { id: user.id, name: user.name, email: user.email }, organization: organizationId ? membership.organization : null, role: membership.role, requiresOrganizationSelection: membership.role === "SUPER_ADMIN" };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const email = dto.email.toLowerCase().trim();
+    const message = "Si la cuenta existe, recibiras instrucciones.";
+    const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true, status: true } });
+    if (!user || user.status !== "ACTIVE") return { ok: true, message };
+    const resetToken = randomBytes(32).toString("hex");
+    await this.prisma.passwordResetToken.create({ data: { userId: user.id, tokenHash: this.hash(resetToken), expiresAt: new Date(Date.now() + 30 * 60 * 1000) } });
+    const isProduction = this.config.get<string>("NODE_ENV") === "production";
+    return { ok: true, message, ...(isProduction ? {} : { resetToken }) };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const tokenHash = this.hash(dto.token);
+    const record = await this.prisma.passwordResetToken.findFirst({ where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } }, include: { user: true } });
+    if (!record || record.user.status !== "ACTIVE") throw new UnauthorizedException("Token invalido o vencido");
+    const passwordHash = await hash(dto.password, 12);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: record.userId }, data: { passwordHash } });
+      await tx.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+      await tx.session.updateMany({ where: { userId: record.userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    });
+    return { ok: true };
   }
 
   async verify(token?: string): Promise<AuthPrincipal> {
@@ -88,7 +115,7 @@ export class AuthService {
     return { ok: true };
   }
 
-  private sign(payload: TokenPayload) { return this.jwt.signAsync(payload, { secret: this.config.getOrThrow<string>("JWT_SECRET"), expiresIn: "8h", issuer: "nexoia-api", audience: "nexoia-web" }); }
+  private sign(payload: TokenPayload) { return this.jwt.signAsync(payload, { secret: this.config.getOrThrow<string>("JWT_SECRET"), expiresIn: "30d", issuer: "nexoia-api", audience: "nexoia-web" }); }
   private hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
   private slugify(value: string) { return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || `negocio-${randomUUID().slice(0, 8)}`; }
   private async uniqueSlug(tx: any, baseSlug: string) {
@@ -100,9 +127,9 @@ export class AuthService {
     }
     return slug;
   }
-  private setCookies(response: Response, token: string) {
+  private setCookies(response: Response, token: string, maxAge = 8 * 60 * 60 * 1000) {
     const secure = this.config.get<string>("NODE_ENV") === "production";
-    response.cookie("nexoia_session", token, { httpOnly: true, secure, sameSite: "strict", maxAge: 8 * 60 * 60 * 1000, path: "/" });
-    response.cookie("nexoia_csrf", randomBytes(24).toString("hex"), { httpOnly: false, secure, sameSite: "strict", maxAge: 8 * 60 * 60 * 1000, path: "/" });
+    response.cookie("nexoia_session", token, { httpOnly: true, secure, sameSite: "lax", maxAge, path: "/" });
+    response.cookie("nexoia_csrf", randomBytes(24).toString("hex"), { httpOnly: false, secure, sameSite: "lax", maxAge, path: "/" });
   }
 }
