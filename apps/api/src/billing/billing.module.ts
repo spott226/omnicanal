@@ -1,15 +1,15 @@
 import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { AuthService } from "../auth.service";
+import { AuthModule } from "../auth.module";
 import { PrismaService } from "../prisma.service";
-import { CsrfGuard, RolesGuard, SessionGuard, SubscriptionGuard, TenantGuard } from "../security";
 import { BillingController } from "./billing.controller";
 import { BillingProviderService } from "./billing-provider.service";
 import { BillingService } from "./billing.service";
 
 @Module({
+  imports: [AuthModule],
   controllers: [BillingController],
-  providers: [BillingService, BillingProviderService, PrismaService, ConfigService, AuthService, SessionGuard, TenantGuard, SubscriptionGuard, CsrfGuard, RolesGuard],
+  providers: [BillingService, BillingProviderService, PrismaService, ConfigService],
   exports: [BillingService, BillingProviderService],
 })
 export class BillingModule {}
