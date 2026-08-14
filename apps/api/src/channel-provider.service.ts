@@ -20,11 +20,12 @@ export class ChannelProviderService {
   list(principal: AuthPrincipal) {
     const mode = this.mode();
     if (mode === "meta") {
-      return this.instagramConnection(principal.organizationId).then((instagram) => CHANNELS.map((channel) => {
-        if (channel === "INSTAGRAM" && instagram) return this.item(channel, "CONNECTED", mode, instagram.username || instagram.externalAccountId || "Cuenta Instagram conectada");
-        if (channel === "WHATSAPP") return this.item(channel, "PENDING", mode, "WhatsApp pendiente");
-        return this.item(channel, "CONFIGURING", mode, channel === "FACEBOOK" ? "Facebook pendiente" : "Sin cuenta conectada");
-      }));
+      return Promise.all([this.connection(principal.organizationId, "INSTAGRAM"), this.connection(principal.organizationId, "FACEBOOK"), this.connection(principal.organizationId, "WHATSAPP")]).then(([instagram, facebook, whatsapp]) => CHANNELS.map((channel) => {
+          const connection = channel === "INSTAGRAM" ? instagram : channel === "FACEBOOK" ? facebook : whatsapp;
+          if (connection) return this.item(channel, "CONNECTED", mode, connection.username || connection.externalAccountId || `${LABELS[channel]} conectado`);
+          if (channel === "WHATSAPP") return this.item(channel, "PENDING", mode, "Requiere plan activo y registro integrado de WhatsApp Business.");
+          return this.item(channel, "CONFIGURING", mode, `Autoriza ${LABELS[channel]} con la cuenta de este negocio.`);
+        }));
     }
     return CHANNELS.map((channel, index) => this.item(channel, index === 2 ? "CONFIGURING" : "CONNECTED_MOCK", mode));
   }
@@ -43,7 +44,10 @@ export class ChannelProviderService {
     return this.item(channel, "CONNECTED_MOCK", mode);
   }
 
-  disconnect(channel: ChannelKey) {
+  async disconnect(principal: AuthPrincipal, channel: ChannelKey) {
+    if (this.mode() === "meta" && principal.organizationId) {
+      await (this.prisma as any).metaConnection.deleteMany({ where: { organizationId: principal.organizationId, provider: channel } });
+    }
     return this.item(channel, "NOT_CONNECTED", this.mode());
   }
 
@@ -78,10 +82,10 @@ export class ChannelProviderService {
     }[status];
   }
 
-  private async instagramConnection(organizationId?: string | null) {
+  private async connection(organizationId: string | null | undefined, provider: ChannelKey) {
     if (!organizationId) return null;
     return (this.prisma as any).metaConnection.findUnique({
-      where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
+      where: { organizationId_provider: { organizationId, provider } },
       select: { status: true, externalAccountId: true, username: true },
     }).then((connection: { status: string; externalAccountId?: string | null; username?: string | null } | null) => connection?.status === "CONNECTED" ? connection : null);
   }

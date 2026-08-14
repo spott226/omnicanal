@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { createCipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { AuthPrincipal } from "../../../../packages/shared/src/index";
 import { PrismaService } from "../prisma.service";
+import type { CompleteWhatsAppSignupDto } from "../resource.dto";
 
 type InstagramTokenResponse = {
   access_token?: string;
@@ -22,6 +23,16 @@ type InstagramProfileResponse = {
   account_type?: string;
 };
 
+type FacebookTokenResponse = {
+  access_token?: string;
+  token_type?: string;
+  expires_in?: number;
+  error?: { message?: string };
+};
+
+type FacebookPage = { id?: string; name?: string; access_token?: string };
+type FacebookPagesResponse = { data?: FacebookPage[] };
+
 @Injectable()
 export class MetaOAuthService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(ConfigService) private readonly config: ConfigService) {}
@@ -38,6 +49,20 @@ export class MetaOAuthService {
     authorizationUrl.searchParams.set("redirect_uri", redirectUri);
     authorizationUrl.searchParams.set("response_type", "code");
     authorizationUrl.searchParams.set("scope", this.config.get<string>("META_INSTAGRAM_SCOPES")?.trim() || "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments");
+    authorizationUrl.searchParams.set("state", this.signState(organizationId));
+    return { authorizationUrl: authorizationUrl.toString() };
+  }
+
+  async startFacebookLogin(principal: AuthPrincipal) {
+    const organizationId = this.organizationId(principal);
+    const clientId = this.config.get<string>("META_APP_ID")?.trim();
+    const clientSecret = this.config.get<string>("META_APP_SECRET")?.trim();
+    if (!clientId || !clientSecret) throw new BadRequestException("Faltan credenciales OAuth de Facebook en Railway");
+    const authorizationUrl = new URL(`https://www.facebook.com/${this.graphVersion()}/dialog/oauth`);
+    authorizationUrl.searchParams.set("client_id", clientId);
+    authorizationUrl.searchParams.set("redirect_uri", this.facebookRedirectUri());
+    authorizationUrl.searchParams.set("response_type", "code");
+    authorizationUrl.searchParams.set("scope", this.config.get<string>("META_FACEBOOK_SCOPES")?.trim() || "pages_show_list,pages_read_engagement,pages_manage_metadata,pages_messaging");
     authorizationUrl.searchParams.set("state", this.signState(organizationId));
     return { authorizationUrl: authorizationUrl.toString() };
   }
@@ -92,6 +117,42 @@ export class MetaOAuthService {
     };
   }
 
+  async completeFacebookLogin(input: { code?: string; error?: string; errorDescription?: string; state?: string; redirectUri?: string }) {
+    if (input.error) throw new BadRequestException(input.errorDescription || input.error);
+    const code = input.code?.trim();
+    if (!code) throw new BadRequestException("Facebook no devolvió código de autorización");
+    const organizationId = await this.organizationIdFromState(input.state);
+    const token = await this.exchangeFacebookCode(code, input.redirectUri);
+    if (!token.access_token) throw new BadRequestException(token.error?.message || "Facebook no devolvió token de acceso");
+    const pages = await this.fetchFacebookPages(token.access_token);
+    const page = pages[0];
+    if (!page?.id || !page.access_token) throw new BadRequestException("No se encontró una página de Facebook administrable. Autoriza una cuenta con una Página y vuelve a intentar.");
+    const expiresAt = typeof token.expires_in === "number" ? new Date(Date.now() + token.expires_in * 1000) : null;
+    await (this.prisma as any).metaConnection.upsert({
+      where: { organizationId_provider: { organizationId, provider: "FACEBOOK" } },
+      create: { organizationId, provider: "FACEBOOK", externalAccountId: page.id, username: page.name, accessTokenEncrypted: this.encrypt(page.access_token), tokenType: token.token_type, scopes: this.config.get<string>("META_FACEBOOK_SCOPES")?.trim().split(",").filter(Boolean) ?? [], expiresAt, status: "CONNECTED", lastError: null, connectedAt: new Date() },
+      update: { externalAccountId: page.id, username: page.name, accessTokenEncrypted: this.encrypt(page.access_token), tokenType: token.token_type, scopes: this.config.get<string>("META_FACEBOOK_SCOPES")?.trim().split(",").filter(Boolean) ?? [], expiresAt, status: "CONNECTED", lastError: null, connectedAt: new Date() },
+    });
+    return { organizationId, externalAccountId: page.id, username: page.name };
+  }
+
+  async completeWhatsAppEmbeddedSignup(principal: AuthPrincipal, dto: CompleteWhatsAppSignupDto) {
+    const organizationId = this.organizationId(principal);
+    if (!this.config.get<string>("META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID")?.trim()) throw new BadRequestException("Falta configurar el registro integrado de WhatsApp Business en Meta.");
+    const subscription = await (this.prisma as any).subscription.findFirst({ where: { organizationId, status: "ACTIVE" }, orderBy: { createdAt: "desc" }, include: { planPrice: true } });
+    if (!subscription || (subscription.planPrice?.channelsLimit ?? 0) < 1) throw new BadRequestException("WhatsApp Business requiere un plan activo que incluya al menos un canal.");
+    const token = await this.exchangeEmbeddedSignupCode(dto.authorizationCode);
+    if (!token.access_token) throw new BadRequestException(token.error?.message || "Meta no devolvió un token de WhatsApp Business");
+    const subscribeResponse = await fetch(`https://graph.facebook.com/${this.graphVersion()}/${encodeURIComponent(dto.wabaId)}/subscribed_apps`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ access_token: token.access_token }) });
+    if (!subscribeResponse.ok) throw new BadRequestException("Meta no permitió suscribir el webhook de WhatsApp Business. Revisa permisos, app y número.");
+    await (this.prisma as any).metaConnection.upsert({
+      where: { organizationId_provider: { organizationId, provider: "WHATSAPP" } },
+      create: { organizationId, provider: "WHATSAPP", externalAccountId: dto.wabaId, username: dto.displayName?.trim() || dto.phoneNumberId, accessTokenEncrypted: this.encrypt(token.access_token), tokenType: token.token_type, scopes: { phoneNumberId: dto.phoneNumberId }, expiresAt: typeof token.expires_in === "number" ? new Date(Date.now() + token.expires_in * 1000) : null, status: "CONNECTED", lastError: null, connectedAt: new Date() },
+      update: { externalAccountId: dto.wabaId, username: dto.displayName?.trim() || dto.phoneNumberId, accessTokenEncrypted: this.encrypt(token.access_token), tokenType: token.token_type, scopes: { phoneNumberId: dto.phoneNumberId }, expiresAt: typeof token.expires_in === "number" ? new Date(Date.now() + token.expires_in * 1000) : null, status: "CONNECTED", lastError: null, connectedAt: new Date() },
+    });
+    return { provider: "meta", channel: "WHATSAPP", status: "CONNECTED", accountLabel: dto.displayName?.trim() || dto.phoneNumberId };
+  }
+
   async status(principal: AuthPrincipal) {
     const organizationId = this.organizationId(principal);
     const connection = await (this.prisma as any).metaConnection.findUnique({
@@ -134,8 +195,44 @@ export class MetaOAuthService {
     return (await response.json().catch(() => ({}))) as InstagramProfileResponse;
   }
 
+  private async exchangeFacebookCode(code: string, redirectUriOverride?: string): Promise<FacebookTokenResponse> {
+    const clientId = this.config.get<string>("META_APP_ID")?.trim();
+    const clientSecret = this.config.get<string>("META_APP_SECRET")?.trim();
+    if (!clientId || !clientSecret) throw new InternalServerErrorException("Faltan credenciales OAuth de Facebook");
+    const params = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUriOverride || this.facebookRedirectUri(), code });
+    const response = await fetch(`https://graph.facebook.com/${this.graphVersion()}/oauth/access_token?${params.toString()}`);
+    const data = (await response.json().catch(() => ({}))) as FacebookTokenResponse;
+    if (!response.ok) throw new BadRequestException(data.error?.message || "Facebook rechazó el código de autorización");
+    return data;
+  }
+
+  private async exchangeEmbeddedSignupCode(code: string): Promise<FacebookTokenResponse> {
+    const clientId = this.config.get<string>("META_APP_ID")?.trim();
+    const clientSecret = this.config.get<string>("META_APP_SECRET")?.trim();
+    if (!clientId || !clientSecret) throw new InternalServerErrorException("Faltan credenciales de Meta para WhatsApp Business");
+    const params = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code });
+    const response = await fetch(`https://graph.facebook.com/${this.graphVersion()}/oauth/access_token?${params.toString()}`);
+    const data = (await response.json().catch(() => ({}))) as FacebookTokenResponse;
+    if (!response.ok) throw new BadRequestException(data.error?.message || "Meta rechazó el código de WhatsApp Business");
+    return data;
+  }
+
+  private async fetchFacebookPages(accessToken: string) {
+    const response = await fetch(`https://graph.facebook.com/${this.graphVersion()}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(accessToken)}`);
+    if (!response.ok) throw new BadRequestException("No fue posible listar las páginas de Facebook autorizadas");
+    return ((await response.json().catch(() => ({}))) as FacebookPagesResponse).data ?? [];
+  }
+
   private redirectUri() {
     return this.config.get<string>("META_INSTAGRAM_REDIRECT_URI")?.trim() || `${this.config.getOrThrow<string>("BACKEND_URL").replace(/\/$/, "")}/api/v1/meta/instagram/callback`;
+  }
+
+  private facebookRedirectUri() {
+    return this.config.get<string>("META_FACEBOOK_REDIRECT_URI")?.trim() || `${this.config.getOrThrow<string>("BACKEND_URL").replace(/\/$/, "")}/api/v1/meta/facebook/callback`;
+  }
+
+  private graphVersion() {
+    return this.config.get<string>("META_GRAPH_VERSION")?.trim() || "v23.0";
   }
 
   private organizationId(principal: AuthPrincipal) {

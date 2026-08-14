@@ -29,6 +29,7 @@ export class CreateContactDto {
 export class UpdateContactDto extends CreateContactDto {}
 
 export class SendMessageDto { @IsString() @MaxLength(4000) content!: string; }
+export class CompleteWhatsAppSignupDto { @IsString() @MaxLength(2000) authorizationCode!: string; @IsString() @MaxLength(80) wabaId!: string; @IsString() @MaxLength(80) phoneNumberId!: string; @IsOptional() @IsString() @MaxLength(160) displayName?: string; }
 export class CreateNoteDto { @IsUUID() contactId!: string; @IsString() @MaxLength(4000) content!: string; }
 export class CreateTagDto { @IsString() @MaxLength(60) name!: string; @IsString() @MaxLength(20) color!: string; }
 export class ContactTagDto { @IsUUID() contactId!: string; @IsUUID() tagId!: string; }

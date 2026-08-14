@@ -13,7 +13,7 @@ type MetaMessageEvent = {
   messageId?: string;
   text?: string;
   timestamp?: Date;
-  channel?: "INSTAGRAM" | "FACEBOOK";
+  channel?: "INSTAGRAM" | "FACEBOOK" | "WHATSAPP";
   raw: unknown;
 };
 
@@ -171,8 +171,8 @@ export class MetaWebhookService {
   }
 
   extractEvents(payload: any): MetaMessageEvent[] {
-    if (!payload || !["instagram", "page"].includes(String(payload.object))) return [];
-    const channel = payload.object === "instagram" ? "INSTAGRAM" : "FACEBOOK";
+    if (!payload || !["instagram", "page", "whatsapp_business_account"].includes(String(payload.object))) return [];
+    const channel = payload.object === "instagram" ? "INSTAGRAM" : payload.object === "page" ? "FACEBOOK" : "WHATSAPP";
     const events: MetaMessageEvent[] = [];
     for (const entry of payload.entry ?? []) {
       const messaging = entry.messaging ?? [];
@@ -194,6 +194,12 @@ export class MetaWebhookService {
       for (const change of changes) {
         if (change?.field !== "messages") continue;
         const value = change.value ?? {};
+        if (channel === "WHATSAPP") {
+          for (const message of value.messages ?? []) {
+            events.push({ object: String(payload.object), senderId: message?.from ? String(message.from) : undefined, recipientId: entry?.id ? String(entry.id) : undefined, messageId: message?.id ? String(message.id) : undefined, text: typeof message?.text?.body === "string" ? message.text.body : undefined, timestamp: this.metaTimestamp(message?.timestamp), channel, raw: { object: payload.object, entry: { id: entry.id, time: entry.time, changes: [change] } } });
+          }
+          continue;
+        }
         const message = value.message;
         events.push({
           object: String(payload.object),
@@ -217,7 +223,7 @@ export class MetaWebhookService {
   }
 
   private async processEvent(event: MetaMessageEvent) {
-    const organizationId = await this.resolveOrganizationId(event.recipientId);
+    const organizationId = await this.resolveOrganizationId(event.recipientId, event.channel);
     if (!organizationId) {
       this.logger.warn(`Evento Meta ignorado: la cuenta receptora ${event.recipientId ?? "desconocida"} no pertenece a una organizacion conectada.`);
       return;
@@ -306,15 +312,15 @@ export class MetaWebhookService {
     if (!event.messageId) return "missing_message_id";
     if (!event.senderId) return "missing_sender_id";
     const ownIds = [this.config.get<string>("META_PAGE_ID"), this.config.get<string>("META_IG_BUSINESS_ACCOUNT_ID")].filter(Boolean);
-    if (ownIds.includes(event.senderId)) return "own_page_message";
+    if ((event.senderId && event.senderId === event.recipientId) || ownIds.includes(event.senderId)) return "own_page_message";
     if (!event.text?.trim()) return "unsupported_non_text_message";
     return undefined;
   }
 
-  private async resolveOrganizationId(externalAccountId?: string) {
+  private async resolveOrganizationId(externalAccountId?: string, channel?: "INSTAGRAM" | "FACEBOOK" | "WHATSAPP") {
     if (externalAccountId) {
       const connection = await (this.prisma as any).metaConnection.findFirst({
-        where: { externalAccountId, provider: "INSTAGRAM", status: "CONNECTED", organization: { status: "ACTIVE" } },
+        where: { externalAccountId, provider: channel === "FACEBOOK" ? "FACEBOOK" : channel === "WHATSAPP" ? "WHATSAPP" : "INSTAGRAM", status: "CONNECTED", organization: { status: "ACTIVE" } },
         select: { organizationId: true },
       });
       if (connection?.organizationId) return connection.organizationId;
@@ -334,23 +340,22 @@ export class MetaWebhookService {
   }
 
   private async upsertContact(tx: Prisma.TransactionClient, organizationId: string, event: MetaMessageEvent) {
-    const where = event.channel === "INSTAGRAM"
-      ? { organizationId, instagramUsername: event.senderId }
-      : { organizationId, facebookId: event.senderId };
+    const where = event.channel === "INSTAGRAM" ? { organizationId, instagramUsername: event.senderId } : event.channel === "FACEBOOK" ? { organizationId, facebookId: event.senderId } : { organizationId, whatsappId: event.senderId };
     const existing = await tx.contact.findFirst({ where });
     if (existing) return tx.contact.update({ where: { id: existing.id }, data: { lastInteractionAt: event.timestamp ?? new Date() } });
     return tx.contact.create({
       data: {
         organizationId,
-        firstName: event.channel === "INSTAGRAM" ? `Instagram ${this.readableSender(event.senderId)}` : `Facebook ${this.readableSender(event.senderId)}`,
+        firstName: event.channel === "INSTAGRAM" ? `Instagram ${this.readableSender(event.senderId)}` : event.channel === "FACEBOOK" ? `Facebook ${this.readableSender(event.senderId)}` : `WhatsApp ${this.readableSender(event.senderId)}`,
         instagramUsername: event.channel === "INSTAGRAM" ? event.senderId : undefined,
         facebookId: event.channel === "FACEBOOK" ? event.senderId : undefined,
+        whatsappId: event.channel === "WHATSAPP" ? event.senderId : undefined,
         lastInteractionAt: event.timestamp ?? new Date(),
       },
     });
   }
 
-  private async openConversation(tx: Prisma.TransactionClient, organizationId: string, contactId: string, channel: "INSTAGRAM" | "FACEBOOK") {
+  private async openConversation(tx: Prisma.TransactionClient, organizationId: string, contactId: string, channel: "INSTAGRAM" | "FACEBOOK" | "WHATSAPP") {
     const existing = await tx.conversation.findFirst({ where: { organizationId, contactId, channel, status: "OPEN" }, orderBy: { lastMessageAt: "desc" } });
     if (existing) return existing;
     return tx.conversation.create({ data: { organizationId, contactId, channel, status: "OPEN", aiStatus: "ACTIVE", lastMessageAt: new Date() } });

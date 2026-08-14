@@ -25,6 +25,8 @@ const schema = z.object({
   META_INSTAGRAM_APP_ID: z.string().optional().default(""),
   META_INSTAGRAM_APP_SECRET: z.string().optional().default(""),
   META_INSTAGRAM_REDIRECT_URI: z.string().url().optional(),
+  META_FACEBOOK_REDIRECT_URI: z.string().url().optional(),
+  META_FACEBOOK_SCOPES: z.string().optional().default(""),
   META_PAGE_ID: z.string().optional().default(""),
   META_PAGE_ACCESS_TOKEN: z.string().optional().default(""),
   META_IG_BUSINESS_ACCOUNT_ID: z.string().optional().default(""),

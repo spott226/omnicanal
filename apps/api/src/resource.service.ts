@@ -392,11 +392,17 @@ export class ResourceService {
     const mode = (this.config?.get<string>("CHANNEL_PROVIDER_MODE") ?? "mock").toLowerCase();
     if (mode === "mock") return { sent: true, status: "mock_sent" };
     if (mode !== "meta") return { sent: false, status: "provider_disabled" };
-    if (!["INSTAGRAM", "FACEBOOK"].includes(conversation.channel)) return { sent: false, status: "unsupported_channel" };
-    const recipientId = conversation.channel === "INSTAGRAM" ? conversation.contact?.instagramUsername : conversation.contact?.facebookId;
+    if (!["INSTAGRAM", "FACEBOOK", "WHATSAPP"].includes(conversation.channel)) return { sent: false, status: "unsupported_channel" };
+    const recipientId = conversation.channel === "INSTAGRAM" ? conversation.contact?.instagramUsername : conversation.channel === "FACEBOOK" ? conversation.contact?.facebookId : conversation.contact?.whatsappId;
     if (!recipientId) return { sent: false, status: "missing_recipient" };
     const version = this.config?.get<string>("META_GRAPH_VERSION")?.trim() || "v20.0";
     const organizationId = String(conversation.organizationId ?? "");
+    if (conversation.channel === "WHATSAPP") {
+      const connection = await (this.prisma as any).metaConnection?.findUnique?.({ where: { organizationId_provider: { organizationId, provider: "WHATSAPP" } }, select: { status: true, accessTokenEncrypted: true, scopes: true } });
+      const phoneNumberId = (connection?.scopes as any)?.phoneNumberId;
+      if (!connection || connection.status !== "CONNECTED" || !connection.accessTokenEncrypted || !phoneNumberId) return { sent: false, status: "missing_whatsapp_connection" };
+      return this.postWhatsAppMessage(`https://graph.facebook.com/${version}/${encodeURIComponent(phoneNumberId)}/messages`, this.decryptMetaToken(connection.accessTokenEncrypted), recipientId, content);
+    }
     if (conversation.channel === "INSTAGRAM") {
       const connection = await (this.prisma as any).metaConnection?.findUnique?.({
         where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
@@ -406,9 +412,13 @@ export class ResourceService {
       const token = this.decryptMetaToken(connection.accessTokenEncrypted);
       return this.postMetaMessage(`https://graph.instagram.com/${version}/me/messages?access_token=${encodeURIComponent(token)}`, recipientId, content);
     }
-    const token = this.config?.get<string>("META_PAGE_ACCESS_TOKEN")?.trim();
-    if (!token) return { sent: false, status: "missing_token" };
-    return this.postMetaMessage(`https://graph.facebook.com/${version}/me/messages?access_token=${encodeURIComponent(token)}`, recipientId, content);
+    const connection = await (this.prisma as any).metaConnection?.findUnique?.({
+      where: { organizationId_provider: { organizationId, provider: "FACEBOOK" } },
+      select: { status: true, externalAccountId: true, accessTokenEncrypted: true },
+    });
+    if (!connection || connection.status !== "CONNECTED" || !connection.accessTokenEncrypted || !connection.externalAccountId) return { sent: false, status: "missing_facebook_connection" };
+    const token = this.decryptMetaToken(connection.accessTokenEncrypted);
+    return this.postMetaMessage(`https://graph.facebook.com/${version}/${encodeURIComponent(connection.externalAccountId)}/messages?access_token=${encodeURIComponent(token)}`, recipientId, content);
   }
 
   private async postMetaMessage(url: string, recipientId: string, content: string): Promise<{ sent: boolean; status: string; externalMessageId?: string }> {
@@ -420,6 +430,13 @@ export class ResourceService {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return { sent: false, status: "meta_error" };
     return { sent: true, status: "sent", externalMessageId: typeof payload?.message_id === "string" ? payload.message_id : undefined };
+  }
+
+  private async postWhatsAppMessage(url: string, token: string, recipientId: string, content: string): Promise<{ sent: boolean; status: string; externalMessageId?: string }> {
+    const response = await fetch(url, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ messaging_product: "whatsapp", to: recipientId, type: "text", text: { body: content } }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { sent: false, status: "whatsapp_error" };
+    return { sent: true, status: "sent", externalMessageId: typeof payload?.messages?.[0]?.id === "string" ? payload.messages[0].id : undefined };
   }
 
   private decryptMetaToken(value: string) {
