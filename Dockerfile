@@ -15,6 +15,6 @@ COPY . .
 
 RUN npm run db:generate && npm run build:api
 
-EXPOSE 3001
+EXPOSE 8080
 
-CMD ["npm", "run", "start:api"]
+CMD ["node", "apps/api/dist/apps/api/src/main.js"]

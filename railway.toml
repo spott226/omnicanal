@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 
 [deploy]
 preDeployCommand = "npm run db:migrate"
-startCommand = "npm run db:migrate && npm run start:api"
+startCommand = "node apps/api/dist/apps/api/src/main.js"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
