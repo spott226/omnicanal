@@ -57,9 +57,11 @@ export async function seedDemo() {
     ] });
   }
   const planPrices = [
+    ["MICRO", "MONTHLY", 4900, 20, 1, 1, 20],
     ["STARTER", "MONTHLY", 99000, 500, 3, 1, 500],
     ["PRO", "MONTHLY", 199000, 2000, 10, 3, 2000],
     ["ENTERPRISE", "MONTHLY", 349000, 5000, 25, 10, 5000],
+    ["MICRO", "YEARLY", 49000, 20, 1, 1, 20],
     ["STARTER", "YEARLY", 948000, 500, 3, 1, 500],
     ["PRO", "YEARLY", 1908000, 2000, 10, 3, 2000],
     ["ENTERPRISE", "YEARLY", 3348000, 5000, 25, 10, 5000],

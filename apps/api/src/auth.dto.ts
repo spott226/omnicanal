@@ -1,6 +1,6 @@
 import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, IsUUID, Length, MaxLength } from "class-validator";
 
-const REGISTER_PLANS = ["STARTER", "PRO", "ENTERPRISE"] as const;
+const REGISTER_PLANS = ["MICRO", "STARTER", "PRO", "ENTERPRISE"] as const;
 const BILLING_INTERVALS = ["MONTHLY", "YEARLY"] as const;
 type RegisterPlan = (typeof REGISTER_PLANS)[number];
 type BillingInterval = (typeof BILLING_INTERVALS)[number];

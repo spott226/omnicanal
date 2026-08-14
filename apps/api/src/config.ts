@@ -38,6 +38,8 @@ const schema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional().default(""),
   STRIPE_SUCCESS_URL: z.string().url().optional(),
   STRIPE_CANCEL_URL: z.string().url().optional(),
+  STRIPE_PRICE_MICRO_MONTHLY: z.string().optional().default(""),
+  STRIPE_PRICE_MICRO_YEARLY: z.string().optional().default(""),
   STRIPE_PRICE_STARTER_MONTHLY: z.string().optional().default(""),
   STRIPE_PRICE_STARTER_YEARLY: z.string().optional().default(""),
   STRIPE_PRICE_GROWTH_MONTHLY: z.string().optional().default(""),

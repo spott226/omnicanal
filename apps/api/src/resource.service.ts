@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createDecipheriv, createHash, randomUUID } from "node:crypto";
 import { hash } from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
@@ -360,16 +360,30 @@ export class ResourceService {
       return tx.conversation.findFirstOrThrow({ where: { id, organizationId }, include: { contact: { include: { tags: { include: { tag: true } }, notes: { orderBy: { createdAt: "desc" } } } }, messages: { orderBy: { createdAt: "asc" } }, appointments: true, reminders: true } });
     });
   }
-  private async sendMetaMessage(conversation: any, content: string) {
+  private async sendMetaMessage(conversation: any, content: string): Promise<{ sent: boolean; status: string; externalMessageId?: string }> {
     const mode = (this.config?.get<string>("CHANNEL_PROVIDER_MODE") ?? "mock").toLowerCase();
     if (mode !== "meta") return { sent: false, status: "meta_disabled" };
     if (!["INSTAGRAM", "FACEBOOK"].includes(conversation.channel)) return { sent: false, status: "unsupported_channel" };
-    const token = this.config?.get<string>("META_PAGE_ACCESS_TOKEN")?.trim();
-    if (!token) return { sent: false, status: "missing_token" };
     const recipientId = conversation.channel === "INSTAGRAM" ? conversation.contact?.instagramUsername : conversation.contact?.facebookId;
     if (!recipientId) return { sent: false, status: "missing_recipient" };
     const version = this.config?.get<string>("META_GRAPH_VERSION")?.trim() || "v20.0";
-    const response = await fetch(`https://graph.facebook.com/${version}/me/messages?access_token=${encodeURIComponent(token)}`, {
+    const organizationId = String(conversation.organizationId ?? "");
+    if (conversation.channel === "INSTAGRAM") {
+      const connection = await (this.prisma as any).metaConnection?.findUnique?.({
+        where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
+        select: { status: true, accessTokenEncrypted: true },
+      });
+      if (!connection || connection.status !== "CONNECTED" || !connection.accessTokenEncrypted) return { sent: false, status: "missing_instagram_connection" };
+      const token = this.decryptMetaToken(connection.accessTokenEncrypted);
+      return this.postMetaMessage(`https://graph.instagram.com/${version}/me/messages?access_token=${encodeURIComponent(token)}`, recipientId, content);
+    }
+    const token = this.config?.get<string>("META_PAGE_ACCESS_TOKEN")?.trim();
+    if (!token) return { sent: false, status: "missing_token" };
+    return this.postMetaMessage(`https://graph.facebook.com/${version}/me/messages?access_token=${encodeURIComponent(token)}`, recipientId, content);
+  }
+
+  private async postMetaMessage(url: string, recipientId: string, content: string): Promise<{ sent: boolean; status: string; externalMessageId?: string }> {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ recipient: { id: recipientId }, messaging_type: "RESPONSE", message: { text: content } }),
@@ -377,6 +391,19 @@ export class ResourceService {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return { sent: false, status: "meta_error" };
     return { sent: true, status: "sent", externalMessageId: typeof payload?.message_id === "string" ? payload.message_id : undefined };
+  }
+
+  private decryptMetaToken(value: string) {
+    const [version, ivBase64, tagBase64, encryptedBase64] = value.split(":");
+    if (version !== "v1" || !ivBase64 || !tagBase64 || !encryptedBase64) throw new BadRequestException("El token de Instagram guardado no es valido. Conecta la cuenta nuevamente.");
+    try {
+      const key = createHash("sha256").update(this.config?.getOrThrow<string>("APP_ENCRYPTION_KEY") ?? "").digest();
+      const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivBase64, "base64"));
+      decipher.setAuthTag(Buffer.from(tagBase64, "base64"));
+      return Buffer.concat([decipher.update(Buffer.from(encryptedBase64, "base64")), decipher.final()]).toString("utf8");
+    } catch {
+      throw new BadRequestException("No fue posible leer el token de Instagram. Conecta la cuenta nuevamente.");
+    }
   }
   private async ensureSeatLimit(organizationId: string) {
     const subscriptionApi = (this.prisma as any).subscription;

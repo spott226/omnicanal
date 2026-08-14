@@ -1,7 +1,7 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
 
 export const BILLING_INTERVALS = ["MONTHLY", "YEARLY"] as const;
-export const BILLING_PLANS = ["STARTER", "PRO", "ENTERPRISE"] as const;
+export const BILLING_PLANS = ["MICRO", "STARTER", "PRO", "ENTERPRISE"] as const;
 type BillingIntervalValue = (typeof BILLING_INTERVALS)[number];
 type BillingPlanValue = (typeof BILLING_PLANS)[number];
 
