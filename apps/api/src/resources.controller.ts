@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
-import { CurrentPrincipal, Protected } from "./security";
+import { AllowInactiveSubscription, CurrentPrincipal, Protected } from "./security";
 import { AISimulateDto, AppointmentDto, AutomationDto, CreateContactDto, CreateNoteDto, CreateTagDto, InviteMemberDto, PageQueryDto, PromptDto, ReminderDto, SendMessageDto, UpdateContactDto, UpdateMemberRoleDto, UpdateOrganizationDto } from "./resource.dto";
 import { ResourceService } from "./resource.service";
 import { ChannelProviderService } from "./channel-provider.service";
@@ -13,7 +13,7 @@ const ADMINS = ["SUPER_ADMIN", "ORGANIZATION_ADMIN"] as const;
 export class ResourcesController {
   constructor(@Inject(ResourceService) private readonly resources: ResourceService, @Inject(ChannelProviderService) private readonly channels: ChannelProviderService) {}
 
-  @Get("organization/current") @Protected(...ALL) organization(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.currentOrganization(principal); }
+  @Get("organization/current") @AllowInactiveSubscription() @Protected(...ALL) organization(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.currentOrganization(principal); }
   @Patch("organization/current") @Protected(...ADMINS) updateOrganization(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: UpdateOrganizationDto) { return this.resources.updateOrganization(principal, dto); }
   @Get("dashboard") @Protected(...MANAGERS) dashboard(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.dashboard(principal); }
   @Get("superadmin/overview") @Protected("SUPER_ADMIN") superadminOverview(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.platformOverview(principal); }
