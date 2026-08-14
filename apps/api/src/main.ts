@@ -18,4 +18,10 @@ async function bootstrap() {
   app.enableShutdownHooks();
   await app.listen(config.get<number>("PORT") ?? 3001, "0.0.0.0");
 }
-void bootstrap();
+void bootstrap().catch((error: unknown) => {
+  // Railway only reports a generic health-check failure when startup exits.
+  // Write the original error to stderr so production deployments remain
+  // diagnosable without exposing it to API clients.
+  console.error("API bootstrap failed", error);
+  process.exitCode = 1;
+});
