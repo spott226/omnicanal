@@ -50,6 +50,7 @@ test("Meta guarda evento bruto, contacto, conversacion y mensaje recibido", asyn
   };
   const prisma: any = {
     organization: { findFirst: async () => ({ id: "org-a" }) },
+    metaConnection: { findFirst: async () => ({ organizationId: "org-a" }) },
     metaWebhookEvent: {
       findUnique: async () => null,
       create: async ({ data }: any) => { created.events.push(data); return { id: "event-a", ...data }; },
@@ -80,6 +81,7 @@ test("Meta dispara respuesta IA automatica despues de guardar mensaje entrante",
   };
   const prisma: any = {
     organization: { findFirst: async () => ({ id: "org-a" }) },
+    metaConnection: { findFirst: async () => ({ organizationId: "org-a" }) },
     metaWebhookEvent: {
       findUnique: async () => null,
       create: async ({ data }: any) => ({ id: "event-a", ...data }),
@@ -98,6 +100,7 @@ test("Meta ignora mensajes enviados por la propia pagina", async () => {
   const created: any[] = [];
   const prisma: any = {
     organization: { findFirst: async () => ({ id: "org-a" }) },
+    metaConnection: { findFirst: async () => ({ organizationId: "org-a" }) },
     metaWebhookEvent: { findUnique: async () => null, create: async ({ data }: any) => { created.push(data); return data; } },
     $transaction: async () => { throw new Error("no debe crear conversacion"); },
   };
@@ -106,17 +109,18 @@ test("Meta ignora mensajes enviados por la propia pagina", async () => {
   assert.equal(created[0].ignoredReason, "own_page_message");
 });
 
-test("Meta usa META_ORGANIZATION_ID cuando hay varios workspaces", async () => {
+test("Meta no enruta eventos desconocidos a una organizacion global", async () => {
   let eventData: any;
   const prisma: any = {
     organization: {
       findFirst: async ({ where }: any) => where.id === "d6e48cbf-0abe-4869-a945-554efcf26a79" ? { id: where.id } : null,
     },
+    metaConnection: { findFirst: async () => null },
     metaWebhookEvent: { findUnique: async () => null, create: async ({ data }: any) => { eventData = data; return data; } },
     $transaction: async () => { throw new Error("no debe crear conversacion"); },
   };
   const service = new MetaWebhookService(prisma, config({ META_ORGANIZATION_ID: "d6e48cbf-0abe-4869-a945-554efcf26a79", META_PAGE_ID: "page-id" }));
   const result = await service.receive({ object: "page", entry: [{ messaging: [{ sender: { id: "page-id" }, recipient: { id: "fb-user" }, message: { mid: "own-mid-2", text: "respuesta" } }] }] }, Buffer.from("{}"));
   assert.deepEqual(result, { received: true });
-  assert.equal(eventData.organizationId, "d6e48cbf-0abe-4869-a945-554efcf26a79");
+  assert.equal(eventData, undefined);
 });

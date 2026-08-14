@@ -218,6 +218,10 @@ export class MetaWebhookService {
 
   private async processEvent(event: MetaMessageEvent) {
     const organizationId = await this.resolveOrganizationId(event.recipientId);
+    if (!organizationId) {
+      this.logger.warn(`Evento Meta ignorado: la cuenta receptora ${event.recipientId ?? "desconocida"} no pertenece a una organizacion conectada.`);
+      return;
+    }
     const ignoredReason = this.ignoredReason(event);
     const rawPayload = event.raw as Prisma.InputJsonValue;
 
@@ -315,15 +319,18 @@ export class MetaWebhookService {
       });
       if (connection?.organizationId) return connection.organizationId;
     }
+    return null;
+    /* Legacy single-tenant fallback intentionally disabled. Connections must map by recipient account. 
     const configuredOrganizationId = this.config.get<string>("META_ORGANIZATION_ID")?.trim();
     if (configuredOrganizationId) {
-      const organization = await this.prisma.organization.findFirst({ where: { id: configuredOrganizationId, status: "ACTIVE" }, select: { id: true } });
-      if (organization) return organization.id;
+      const legacyOrganization = await this.prisma.organization.findFirst({ where: { id: configuredOrganizationId, status: "ACTIVE" }, select: { id: true } });
+      if (legacyOrganization) return legacyOrganization.id;
       throw new ForbiddenException("META_ORGANIZATION_ID no corresponde a una organización activa");
     }
-    const organization = await this.prisma.organization.findFirst({ where: { status: "ACTIVE" }, orderBy: { createdAt: "asc" }, select: { id: true } });
+    const fallbackOrganization = await this.prisma.organization.findFirst({ where: { status: "ACTIVE" }, orderBy: { createdAt: "asc" }, select: { id: true } });
+    const organization = fallbackOrganization;
     if (!organization) throw new ForbiddenException("Organización activa requerida para recibir Meta");
-    return organization.id;
+    return organization.id; */
   }
 
   private async upsertContact(tx: Prisma.TransactionClient, organizationId: string, event: MetaMessageEvent) {
