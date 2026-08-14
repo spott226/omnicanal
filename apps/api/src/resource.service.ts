@@ -184,6 +184,11 @@ export class ResourceService {
     const knowledgeContext = this.buildAiKnowledgeContext({ organization, faqs, products, services, promotions, schedules, policies });
     const provider = this.aiProvider ?? new AIProviderService({ get: () => "mock" } as any);
     const result = await provider.simulate({ agentName: prompt?.agentName ?? "Nia", businessName: organization.name, prompt: prompt?.publishedVersion?.content ?? prompt?.versions?.[0]?.content ?? "", knowledgeContext, message: inbound.content, turn: conversation.messages.filter((message: any) => message.senderType === "CONTACT").length });
+    const providerUnavailable = ["configuration", "openai_error", "deepseek_error", "ollama_error"].includes(String((result as any).safety?.source ?? ""));
+    if (providerUnavailable) {
+      if (input.manual) throw new BadRequestException("La IA no esta disponible todavia. Revisa la clave y el saldo del proveedor.");
+      return { replied: false, reason: "provider_unavailable" };
+    }
     const reply = result.reply?.trim();
     if (!reply) throw new BadRequestException("La IA no genero respuesta");
     const message = await this.prisma.message.create({ data: { organizationId, conversationId: conversation.id, direction: "OUTBOUND", senderType: "AI", content: reply, status: "SENT" } });
