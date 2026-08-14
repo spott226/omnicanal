@@ -23,6 +23,7 @@ export class RegisterDto {
   @IsString() @MaxLength(120) businessName!: string;
   @IsEnum(REGISTER_PLANS) plan!: RegisterPlan;
   @IsEnum(BILLING_INTERVALS) interval!: BillingInterval;
+  @IsOptional() @IsBoolean() startWithTrial?: boolean;
 }
 
 export class ForgotPasswordDto {

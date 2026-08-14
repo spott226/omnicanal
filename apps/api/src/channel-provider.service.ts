@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { PrismaService } from "./prisma.service";
@@ -29,9 +29,17 @@ export class ChannelProviderService {
     return CHANNELS.map((channel, index) => this.item(channel, index === 2 ? "CONFIGURING" : "CONNECTED_MOCK", mode));
   }
 
-  connect(channel: ChannelKey) {
+  async connect(principal: AuthPrincipal, channel: ChannelKey) {
     const mode = this.mode();
-    if (mode === "meta") return this.item(channel, channel === "WHATSAPP" ? "PENDING" : "CONFIGURING", mode);
+    if (mode === "meta" && channel === "WHATSAPP") {
+      await this.requireActivePlan(principal);
+      const configId = this.config.get<string>("META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID")?.trim();
+      if (!configId) {
+        return this.item(channel, "CONFIGURING", mode, "Plan activo. Falta habilitar el registro integrado de WhatsApp en Meta.");
+      }
+      return this.item(channel, "CONFIGURING", mode, "Plan activo. Abre el registro integrado de Meta para vincular el numero de WhatsApp Business.");
+    }
+    if (mode === "meta") return this.item(channel, "CONFIGURING", mode);
     return this.item(channel, "CONNECTED_MOCK", mode);
   }
 
@@ -76,5 +84,21 @@ export class ChannelProviderService {
       where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
       select: { status: true, externalAccountId: true, username: true },
     }).then((connection: { status: string; externalAccountId?: string | null; username?: string | null } | null) => connection?.status === "CONNECTED" ? connection : null);
+  }
+
+  private async requireActivePlan(principal: AuthPrincipal) {
+    if (!principal.organizationId) throw new ForbiddenException("Organizacion requerida para conectar WhatsApp Business");
+    const subscription = await (this.prisma as any).subscription.findFirst({
+      where: { organizationId: principal.organizationId },
+      orderBy: { createdAt: "desc" },
+      include: { planPrice: true },
+    });
+    if (!subscription || subscription.status !== "ACTIVE") {
+      throw new ForbiddenException("WhatsApp Business requiere un plan activo. Elige un plan y completa el pago antes de preparar la conexion.");
+    }
+    if ((subscription.planPrice?.channelsLimit ?? 0) < 1) {
+      throw new ForbiddenException("Tu plan no incluye canales. Actualiza tu plan antes de conectar WhatsApp Business.");
+    }
+    return subscription;
   }
 }

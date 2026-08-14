@@ -23,7 +23,10 @@ export class AuthService {
     const planPrice = await (this.prisma as any).planPrice.findUnique({ where: { plan_interval: { plan: dto.plan, interval: dto.interval } } });
     if (!planPrice?.active) throw new ForbiddenException("El plan seleccionado no está disponible");
     const now = new Date();
-    const trialEndsAt = new Date(now.getTime() + TRIAL_DAYS * 86_400_000);
+    // Micro is an immediate paid entry plan. Higher plans can opt out of the
+    // trial from registration as well, so Checkout never grants it implicitly.
+    const startsWithTrial = dto.plan !== "MICRO" && dto.startWithTrial !== false;
+    const trialEndsAt = startsWithTrial ? new Date(now.getTime() + TRIAL_DAYS * 86_400_000) : now;
     const passwordHash = await hash(dto.password, 12);
     const baseSlug = this.slugify(dto.businessName);
     const result = await this.prisma.$transaction(async (tx) => {
@@ -32,14 +35,14 @@ export class AuthService {
       await tx.membership.create({ data: { organizationId: organization.id, userId: user.id, role: "ORGANIZATION_ADMIN" } });
       const sessionId = randomUUID();
       await tx.session.create({ data: { id: sessionId, userId: user.id, organizationId: organization.id, tokenHash: this.hash(sessionId), expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000) } });
-      await (tx as any).subscription.create({ data: { organizationId: organization.id, planPriceId: planPrice.id, status: "TRIALING", trialStartedAt: now, trialEndsAt, currentPeriodStartsAt: now, currentPeriodEndsAt: trialEndsAt } });
-      await (tx as any).billingEvent.create({ data: { organizationId: organization.id, type: "TRIAL_STARTED_FROM_REGISTRATION", payload: { plan: dto.plan, interval: dto.interval, trialDays: TRIAL_DAYS, trialConversationLimit: TRIAL_CONVERSATION_LIMIT } } });
+      await (tx as any).subscription.create({ data: { organizationId: organization.id, planPriceId: planPrice.id, status: startsWithTrial ? "TRIALING" : "INCOMPLETE", trialStartedAt: startsWithTrial ? now : null, trialEndsAt, currentPeriodStartsAt: now, currentPeriodEndsAt: trialEndsAt } });
+      await (tx as any).billingEvent.create({ data: { organizationId: organization.id, type: startsWithTrial ? "TRIAL_STARTED_FROM_REGISTRATION" : "PAYMENT_REQUIRED_FROM_REGISTRATION", payload: { plan: dto.plan, interval: dto.interval, trialDays: startsWithTrial ? TRIAL_DAYS : 0, trialConversationLimit: startsWithTrial ? TRIAL_CONVERSATION_LIMIT : 0 } } });
       await tx.auditLog.create({ data: { organizationId: organization.id, userId: user.id, action: "ORGANIZATION_REGISTERED", entityType: "Organization", entityId: organization.id } });
       return { user, organization, sessionId };
     });
     const token = await this.sign({ sub: result.user.id, sid: result.sessionId, organizationId: result.organization.id, role: "ORGANIZATION_ADMIN" });
     this.setCookies(response, token);
-    return { user: { id: result.user.id, name: result.user.name, email: result.user.email }, organization: result.organization, role: "ORGANIZATION_ADMIN", trialEndsAt, requiresOrganizationSelection: false };
+    return { user: { id: result.user.id, name: result.user.name, email: result.user.email }, organization: result.organization, role: "ORGANIZATION_ADMIN", trialEndsAt, startsWithTrial, requiresOrganizationSelection: false };
   }
 
   async login(dto: LoginDto, response: Response) {

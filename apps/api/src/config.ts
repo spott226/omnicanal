@@ -32,6 +32,7 @@ const schema = z.object({
   META_VERIFY_TOKEN: z.string().optional().default(""),
   META_GRAPH_VERSION: z.string().optional().default("v23.0"),
   META_WEBHOOK_CALLBACK_URL: z.string().url().optional(),
+  META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID: z.string().optional().default(""),
   WHATSAPP_STATUS: z.enum(["pending", "disabled", "enabled"]).optional().default("pending"),
   STRIPE_SECRET_KEY: z.string().optional().default(""),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional().default(""),
