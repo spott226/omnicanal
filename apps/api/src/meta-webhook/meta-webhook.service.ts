@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createDecipheriv, createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { AuthPrincipal } from "../../../../packages/shared/src/index";
 import { PrismaService } from "../prisma.service";
@@ -94,14 +94,19 @@ export class MetaWebhookService {
   async syncInstagramInbox(principal: AuthPrincipal) {
     const organizationId = principal.organizationId;
     if (!organizationId) throw new ForbiddenException("Organizacion requerida para sincronizar Instagram");
-    const token = this.config.get<string>("META_PAGE_ACCESS_TOKEN")?.trim();
-    const igBusinessAccountId = this.config.get<string>("META_IG_BUSINESS_ACCOUNT_ID")?.trim();
+    const connection = await (this.prisma as any).metaConnection.findUnique({
+      where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
+      select: { status: true, externalAccountId: true, accessTokenEncrypted: true },
+    });
+    if (!connection || connection.status !== "CONNECTED" || !connection.accessTokenEncrypted || !connection.externalAccountId) {
+      throw new BadRequestException("Conecta Instagram para esta organizacion antes de sincronizar.");
+    }
+    const token = this.decrypt(connection.accessTokenEncrypted);
+    const igBusinessAccountId = connection.externalAccountId;
     const version = this.config.get<string>("META_GRAPH_VERSION")?.trim() || "v23.0";
-    if (!token) throw new BadRequestException("META_PAGE_ACCESS_TOKEN requerido para sincronizar Instagram");
-    if (!igBusinessAccountId) throw new BadRequestException("META_IG_BUSINESS_ACCOUNT_ID requerido para sincronizar Instagram");
 
     const conversations = await this.graphGet<GraphCollection<GraphConversation>>(
-      `${igBusinessAccountId}/conversations?platform=instagram&fields=id,updated_time&limit=25`,
+      `${igBusinessAccountId}/conversations?fields=id,updated_time&limit=25`,
       token,
       version,
     );
@@ -266,7 +271,7 @@ export class MetaWebhookService {
 
   private async graphGet<T>(path: string, token: string, version: string): Promise<T> {
     const separator = path.includes("?") ? "&" : "?";
-    const url = `https://graph.facebook.com/${version}/${path}${separator}access_token=${encodeURIComponent(token)}`;
+    const url = `https://graph.instagram.com/${version}/${path}${separator}access_token=${encodeURIComponent(token)}`;
     const response = await fetch(url);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -274,6 +279,19 @@ export class MetaWebhookService {
       throw new BadRequestException(message);
     }
     return body as T;
+  }
+
+  private decrypt(value: string) {
+    const [version, ivBase64, tagBase64, encryptedBase64] = value.split(":");
+    if (version !== "v1" || !ivBase64 || !tagBase64 || !encryptedBase64) throw new BadRequestException("El token de Instagram guardado no es valido. Conecta la cuenta nuevamente.");
+    try {
+      const key = createHash("sha256").update(this.config.getOrThrow<string>("APP_ENCRYPTION_KEY")).digest();
+      const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivBase64, "base64"));
+      decipher.setAuthTag(Buffer.from(tagBase64, "base64"));
+      return Buffer.concat([decipher.update(Buffer.from(encryptedBase64, "base64")), decipher.final()]).toString("utf8");
+    } catch {
+      throw new BadRequestException("No fue posible leer el token de Instagram. Conecta la cuenta nuevamente.");
+    }
   }
 
   private autoReplyEnabled() {
