@@ -35,7 +35,7 @@ export class AuthService {
       await tx.membership.create({ data: { organizationId: organization.id, userId: user.id, role: "ORGANIZATION_ADMIN" } });
       const sessionId = randomUUID();
       await tx.session.create({ data: { id: sessionId, userId: user.id, organizationId: organization.id, tokenHash: this.hash(sessionId), expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000) } });
-      await (tx as any).subscription.create({ data: { organizationId: organization.id, planPriceId: planPrice.id, status: startsWithTrial ? "TRIALING" : "INCOMPLETE", trialStartedAt: startsWithTrial ? now : null, trialEndsAt, currentPeriodStartsAt: now, currentPeriodEndsAt: trialEndsAt } });
+      await (tx as any).subscription.create({ data: { organizationId: organization.id, planPriceId: planPrice.id, status: startsWithTrial ? "TRIALING" : "INCOMPLETE", trialStartedAt: now, trialEndsAt, currentPeriodStartsAt: now, currentPeriodEndsAt: trialEndsAt } });
       await (tx as any).billingEvent.create({ data: { organizationId: organization.id, type: startsWithTrial ? "TRIAL_STARTED_FROM_REGISTRATION" : "PAYMENT_REQUIRED_FROM_REGISTRATION", payload: { plan: dto.plan, interval: dto.interval, trialDays: startsWithTrial ? TRIAL_DAYS : 0, trialConversationLimit: startsWithTrial ? TRIAL_CONVERSATION_LIMIT : 0 } } });
       await tx.auditLog.create({ data: { organizationId: organization.id, userId: user.id, action: "ORGANIZATION_REGISTERED", entityType: "Organization", entityId: organization.id } });
       return { user, organization, sessionId };
