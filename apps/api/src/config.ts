@@ -4,7 +4,9 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().startsWith("postgresql://"),
-  REDIS_URL: z.string().startsWith("redis://"),
+  // Redis is not used by the current runtime yet. Keep the service optional so
+  // a missing Railway Redis reference cannot prevent the API from starting.
+  REDIS_URL: z.union([z.string().startsWith("redis://"), z.literal("")]).optional().default(""),
   JWT_SECRET: z.string().min(32),
   SESSION_SECRET: z.string().min(32),
   APP_ENCRYPTION_KEY: z.string().min(32),
