@@ -111,7 +111,22 @@ export class ResourceService {
     return { items, total, page: page.page, pageSize: page.pageSize };
   }
   async conversation(principal: AuthPrincipal, id: string) { const item = await this.prisma.conversation.findFirst({ where: { id, organizationId: this.org(principal), ...(principal.role === "AGENT" ? { assignedUserId: principal.userId } : {}) }, include: { contact: { include: { tags: { include: { tag: true } }, notes: { orderBy: { createdAt: "desc" } } } }, messages: { orderBy: { createdAt: "asc" } }, appointments: true, reminders: true } }); if (!item) throw new NotFoundException("Conversación no encontrada"); return item; }
-  async sendMessage(principal: AuthPrincipal, id: string, dto: SendMessageDto) { const conversation = await this.conversation(principal, id); return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => { const message = await tx.message.create({ data: { organizationId: this.org(principal), conversationId: conversation.id, direction: "OUTBOUND", senderType: "USER", content: dto.content, status: "SENT" } }); await tx.conversation.update({ where: { id }, data: { lastMessageAt: message.createdAt } }); return message; }); }
+  async sendMessage(principal: AuthPrincipal, id: string, dto: SendMessageDto) {
+    const organizationId = this.org(principal);
+    const conversation = await this.conversation(principal, id);
+    const message = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const created = await tx.message.create({ data: { organizationId, conversationId: conversation.id, direction: "OUTBOUND", senderType: "USER", content: dto.content, status: "PENDING" } });
+      await tx.conversation.update({ where: { id }, data: { lastMessageAt: created.createdAt } });
+      return created;
+    });
+    const delivery = await this.deliverOutboundMessage(conversation, dto.content);
+    const saved = await this.prisma.message.update({
+      where: { id: message.id },
+      data: { status: delivery.sent ? "SENT" : "FAILED", ...(delivery.externalMessageId ? { externalMessageId: delivery.externalMessageId } : {}) },
+    });
+    await this.audit(principal, delivery.sent ? "HUMAN_MESSAGE_SENT" : "HUMAN_MESSAGE_FAILED", "Conversation", id, { channel: conversation.channel, delivery: delivery.status });
+    return { ...saved, delivery: delivery.status };
+  }
   async aiReply(principal: AuthPrincipal, id: string) {
     const organizationId = this.org(principal);
     const conversation = await this.conversation(principal, id);
@@ -191,9 +206,9 @@ export class ResourceService {
     }
     const reply = result.reply?.trim();
     if (!reply) throw new BadRequestException("La IA no genero respuesta");
-    const message = await this.prisma.message.create({ data: { organizationId, conversationId: conversation.id, direction: "OUTBOUND", senderType: "AI", content: reply, status: "SENT" } });
-    const delivery = await this.sendMetaMessage(conversation, reply);
-    if (delivery.externalMessageId) await this.prisma.message.update({ where: { id: message.id }, data: { externalMessageId: delivery.externalMessageId } });
+    const message = await this.prisma.message.create({ data: { organizationId, conversationId: conversation.id, direction: "OUTBOUND", senderType: "AI", content: reply, status: "PENDING" } });
+    const delivery = await this.deliverOutboundMessage(conversation, reply);
+    await this.prisma.message.update({ where: { id: message.id }, data: { status: delivery.sent ? "SENT" : "FAILED", ...(delivery.externalMessageId ? { externalMessageId: delivery.externalMessageId } : {}) } });
     await this.prisma.conversation.update({ where: { id }, data: { lastMessageAt: message.createdAt, aiStatus: "ACTIVE", summary: conversation.summary ?? "Respuesta IA generada con contexto del negocio." } });
     await this.prisma.aIUsageRecord.create({ data: { organizationId, conversationId: id, provider: result.provider ?? "unknown", model: result.model ?? "unknown", inputTokens: Math.ceil((inbound.content.length + knowledgeContext.length) / 4), outputTokens: Math.ceil(reply.length / 4), estimatedCost: 0, latencyMs: Date.now() - startedAt, status: "SUCCEEDED" } });
     if (input.principal) await this.audit(input.principal, delivery.sent ? "AI_REPLY_SENT_TO_META" : "AI_REPLY_CREATED", "Conversation", id, { provider: result.provider, metaDelivery: delivery.status });
@@ -365,9 +380,18 @@ export class ResourceService {
       return tx.conversation.findFirstOrThrow({ where: { id, organizationId }, include: { contact: { include: { tags: { include: { tag: true } }, notes: { orderBy: { createdAt: "desc" } } } }, messages: { orderBy: { createdAt: "asc" } }, appointments: true, reminders: true } });
     });
   }
+  private async deliverOutboundMessage(conversation: any, content: string): Promise<{ sent: boolean; status: string; externalMessageId?: string }> {
+    try {
+      return await this.sendMetaMessage(conversation, content);
+    } catch {
+      return { sent: false, status: "delivery_exception" };
+    }
+  }
+
   private async sendMetaMessage(conversation: any, content: string): Promise<{ sent: boolean; status: string; externalMessageId?: string }> {
     const mode = (this.config?.get<string>("CHANNEL_PROVIDER_MODE") ?? "mock").toLowerCase();
-    if (mode !== "meta") return { sent: false, status: "meta_disabled" };
+    if (mode === "mock") return { sent: true, status: "mock_sent" };
+    if (mode !== "meta") return { sent: false, status: "provider_disabled" };
     if (!["INSTAGRAM", "FACEBOOK"].includes(conversation.channel)) return { sent: false, status: "unsupported_channel" };
     const recipientId = conversation.channel === "INSTAGRAM" ? conversation.contact?.instagramUsername : conversation.contact?.facebookId;
     if (!recipientId) return { sent: false, status: "missing_recipient" };
