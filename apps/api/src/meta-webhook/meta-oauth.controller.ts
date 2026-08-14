@@ -1,11 +1,18 @@
 import { Controller, Get, Header, HttpCode, Inject, Post, Query, Req } from "@nestjs/common";
-import { Protected } from "../security";
+import type { AuthPrincipal } from "../../../../packages/shared/src/index";
+import { CurrentPrincipal, Protected } from "../security";
 import { MetaOAuthService } from "./meta-oauth.service";
 import { MetaWebhookService } from "./meta-webhook.service";
 
 @Controller("meta/instagram")
 export class MetaOAuthController {
   constructor(@Inject(MetaOAuthService) private readonly oauth: MetaOAuthService, @Inject(MetaWebhookService) private readonly webhook: MetaWebhookService) {}
+
+  @Get("start")
+  @Protected("SUPER_ADMIN", "ORGANIZATION_ADMIN", "SUPERVISOR")
+  start(@CurrentPrincipal() principal: AuthPrincipal) {
+    return this.oauth.startInstagramLogin(principal);
+  }
 
   @Get("callback")
   @Header("content-type", "text/html; charset=utf-8")
@@ -45,15 +52,16 @@ export class MetaOAuthController {
   }
 
   @Get("status")
-  status() {
-    return this.oauth.status();
+  @Protected()
+  status(@CurrentPrincipal() principal: AuthPrincipal) {
+    return this.oauth.status(principal);
   }
 
   @Post("sync")
   @HttpCode(200)
   @Protected()
-  sync() {
-    return this.webhook.syncInstagramInbox();
+  sync(@CurrentPrincipal() principal: AuthPrincipal) {
+    return this.webhook.syncInstagramInbox(principal);
   }
 
   private escapeHtml(value: string) {

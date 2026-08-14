@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsUUID } from "class-validator";
+import { IsEnum, IsOptional, IsString, IsUUID } from "class-validator";
 
 export const BILLING_INTERVALS = ["MONTHLY", "YEARLY"] as const;
 export const BILLING_PLANS = ["STARTER", "PRO", "ENTERPRISE"] as const;
@@ -7,6 +7,10 @@ type BillingPlanValue = (typeof BILLING_PLANS)[number];
 
 export class CheckoutDto {
   @IsUUID() planPriceId!: string;
+}
+
+export class ReconcileCheckoutDto {
+  @IsString() sessionId!: string;
 }
 
 export class PreviewPlanDto {

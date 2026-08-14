@@ -75,6 +75,21 @@ export class BillingService {
     };
   }
 
+  async reconcileStripeCheckout(principal: AuthPrincipal, sessionId: string) {
+    const stripeSecretKey = this.config.get<string>("STRIPE_SECRET_KEY")?.trim();
+    if (!stripeSecretKey) throw new BadRequestException("STRIPE_SECRET_KEY no configurado");
+    if (!/^cs_(test|live)_/.test(sessionId)) throw new BadRequestException("Sesion de Stripe invalida");
+    const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+      headers: { authorization: `Bearer ${stripeSecretKey}` },
+    });
+    const session = await response.json().catch(() => ({}));
+    if (!response.ok) throw new BadRequestException(this.stripeErrorMessage(session, "No fue posible verificar el Checkout de Stripe"));
+    if (String(session.client_reference_id || session.metadata?.organizationId || "") !== this.org(principal)) throw new ForbiddenException("El Checkout no corresponde a esta organizacion");
+    if (session.status !== "complete") return { completed: false, status: session.status ?? "open" };
+    const result = await this.applyCheckoutCompleted(session);
+    return { completed: true, ...result };
+  }
+
   async usage(principal: AuthPrincipal) {
     const organizationId = this.org(principal);
     const subscription = await this.currentSubscription(principal);
@@ -294,8 +309,8 @@ export class BillingService {
   private async createStripeCheckoutSession(principal: AuthPrincipal, subscription: any, planPrice: any, stripePriceId: string) {
     const stripeSecretKey = this.config.getOrThrow<string>("STRIPE_SECRET_KEY");
     const frontendUrl = this.config.get<string>("FRONTEND_URL") ?? "http://localhost:3000";
-    const successUrl = this.config.get<string>("STRIPE_SUCCESS_URL") ?? `${frontendUrl}?stripe=success`;
-    const cancelUrl = this.config.get<string>("STRIPE_CANCEL_URL") ?? `${frontendUrl}?stripe=cancel`;
+    const successUrl = this.checkoutRedirectUrl("STRIPE_SUCCESS_URL", `${frontendUrl}?stripe=success`, "&session_id={CHECKOUT_SESSION_ID}");
+    const cancelUrl = this.checkoutRedirectUrl("STRIPE_CANCEL_URL", `${frontendUrl}?stripe=cancel`);
     const customerId = subscription.stripeCustomerId || await this.createStripeCustomer(principal);
     if (!subscription.stripeCustomerId) {
       await (this.prisma as any).subscription.update({ where: { id: subscription.id }, data: { stripeCustomerId: customerId } });
@@ -326,6 +341,13 @@ export class BillingService {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.url) throw new BadRequestException(this.stripeErrorMessage(payload, "Stripe no pudo crear el checkout"));
     return payload as { id: string; url: string };
+  }
+
+  private checkoutRedirectUrl(key: string, fallback: string, suffix = "") {
+    const configured = this.config.get<string>(key)?.trim();
+    const base = configured && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(configured) ? configured : fallback;
+    if (!suffix || base.includes("{CHECKOUT_SESSION_ID}")) return base;
+    return `${base}${base.includes("?") ? "&" : "?"}${suffix.replace(/^&/, "")}`;
   }
 
   private async createStripeCustomer(principal: AuthPrincipal) {

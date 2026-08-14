@@ -20,7 +20,7 @@ export class ResourcesController {
   @Post("team/members") @Protected(...ADMINS) inviteMember(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: InviteMemberDto) { return this.resources.inviteMember(principal, dto); }
   @Patch("team/members/:id") @Protected(...ADMINS) updateMemberRole(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateMemberRoleDto) { return this.resources.updateMemberRole(principal, id, dto); }
   @Delete("team/members/:id") @Protected(...ADMINS) removeMember(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string) { return this.resources.removeMember(principal, id); }
-  @Get("channels") @Protected(...ALL) channelsStatus() { return this.channels.list(); }
+  @Get("channels") @Protected(...ALL) channelsStatus(@CurrentPrincipal() principal: AuthPrincipal) { return this.channels.list(principal); }
   @Post("channels/:channel/connect") @Protected(...MANAGERS) connectChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.connect(channel); }
   @Post("channels/:channel/disconnect") @Protected(...MANAGERS) disconnectChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.disconnect(channel); }
   @Post("channels/:channel/test") @Protected(...ALL) testChannel(@Param("channel") channel: "INSTAGRAM" | "WHATSAPP" | "FACEBOOK") { return this.channels.test(channel); }

@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { createCipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import type { AuthPrincipal } from "../../../../packages/shared/src/index";
 import { PrismaService } from "../prisma.service";
 
 type InstagramTokenResponse = {
@@ -25,12 +26,28 @@ type InstagramProfileResponse = {
 export class MetaOAuthService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(ConfigService) private readonly config: ConfigService) {}
 
+  async startInstagramLogin(principal: AuthPrincipal) {
+    const organizationId = this.organizationId(principal);
+    const clientId = this.config.get<string>("META_INSTAGRAM_APP_ID")?.trim() || this.config.get<string>("META_APP_ID")?.trim();
+    const clientSecret = this.config.get<string>("META_INSTAGRAM_APP_SECRET")?.trim() || this.config.get<string>("META_APP_SECRET")?.trim();
+    const redirectUri = this.redirectUri();
+    if (!clientId || !clientSecret || !redirectUri) throw new BadRequestException("Faltan credenciales OAuth de Instagram en Railway");
+
+    const authorizationUrl = new URL("https://www.instagram.com/oauth/authorize");
+    authorizationUrl.searchParams.set("client_id", clientId);
+    authorizationUrl.searchParams.set("redirect_uri", redirectUri);
+    authorizationUrl.searchParams.set("response_type", "code");
+    authorizationUrl.searchParams.set("scope", this.config.get<string>("META_INSTAGRAM_SCOPES")?.trim() || "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments");
+    authorizationUrl.searchParams.set("state", this.signState(organizationId));
+    return { authorizationUrl: authorizationUrl.toString() };
+  }
+
   async completeInstagramLogin(input: { code?: string; error?: string; errorDescription?: string; state?: string; redirectUri?: string }) {
     if (input.error) throw new BadRequestException(input.errorDescription || input.error);
     const code = input.code?.trim();
     if (!code) throw new BadRequestException("Instagram no devolviÃ³ cÃ³digo de autorizaciÃ³n");
 
-    const organizationId = await this.resolveOrganizationId(input.state);
+    const organizationId = await this.organizationIdFromState(input.state);
     const token = await this.exchangeCode(code, input.redirectUri);
     if (!token.access_token) throw new InternalServerErrorException("Instagram no devolviÃ³ token de acceso");
 
@@ -75,8 +92,8 @@ export class MetaOAuthService {
     };
   }
 
-  async status() {
-    const organizationId = await this.resolveOrganizationId();
+  async status(principal: AuthPrincipal) {
+    const organizationId = this.organizationId(principal);
     const connection = await (this.prisma as any).metaConnection.findUnique({
       where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
       select: { status: true, externalAccountId: true, username: true, connectedAt: true, expiresAt: true, lastError: true },
@@ -119,6 +136,37 @@ export class MetaOAuthService {
 
   private redirectUri() {
     return this.config.get<string>("META_INSTAGRAM_REDIRECT_URI")?.trim() || `${this.config.getOrThrow<string>("BACKEND_URL").replace(/\/$/, "")}/api/v1/meta/instagram/callback`;
+  }
+
+  private organizationId(principal: AuthPrincipal) {
+    if (!principal.organizationId) throw new BadRequestException("Organizacion requerida para conectar Instagram");
+    return principal.organizationId;
+  }
+
+  private signState(organizationId: string) {
+    const payload = Buffer.from(JSON.stringify({ organizationId, expiresAt: Date.now() + 10 * 60_000, nonce: randomBytes(16).toString("hex") })).toString("base64url");
+    const signature = createHmac("sha256", this.stateSecret()).update(payload).digest("base64url");
+    return `${payload}.${signature}`;
+  }
+
+  private async organizationIdFromState(state?: string) {
+    const [payload, signature, extra] = state?.trim().split(".") ?? [];
+    if (!payload || !signature || extra) throw new BadRequestException("La autorizacion de Instagram expiro o no es valida. Intenta conectarla de nuevo.");
+    const expected = createHmac("sha256", this.stateSecret()).update(payload).digest("base64url");
+    const providedBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    if (providedBuffer.length !== expectedBuffer.length || !timingSafeEqual(providedBuffer, expectedBuffer)) throw new BadRequestException("La autorizacion de Instagram no es valida. Intenta conectarla de nuevo.");
+    let decoded: { organizationId?: string; expiresAt?: number };
+    try { decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")); }
+    catch { throw new BadRequestException("La autorizacion de Instagram no es valida. Intenta conectarla de nuevo."); }
+    if (!decoded.organizationId || !decoded.expiresAt || decoded.expiresAt < Date.now()) throw new BadRequestException("La autorizacion de Instagram expiro. Intenta conectarla de nuevo.");
+    const organization = await this.prisma.organization.findFirst({ where: { id: decoded.organizationId, status: "ACTIVE" }, select: { id: true } });
+    if (!organization) throw new BadRequestException("La organizacion ya no esta disponible para conectar Instagram");
+    return organization.id;
+  }
+
+  private stateSecret() {
+    return this.config.getOrThrow<string>("APP_ENCRYPTION_KEY");
   }
 
   private encrypt(value: string) {

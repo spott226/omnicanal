@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, Op
 import { ConfigService } from "@nestjs/config";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Prisma } from "@prisma/client";
+import type { AuthPrincipal } from "../../../../packages/shared/src/index";
 import { PrismaService } from "../prisma.service";
 import { ResourceService } from "../resource.service";
 
@@ -90,8 +91,9 @@ export class MetaWebhookService {
     };
   }
 
-  async syncInstagramInbox() {
-    const organizationId = await this.resolveOrganizationId();
+  async syncInstagramInbox(principal: AuthPrincipal) {
+    const organizationId = principal.organizationId;
+    if (!organizationId) throw new ForbiddenException("Organizacion requerida para sincronizar Instagram");
     const token = this.config.get<string>("META_PAGE_ACCESS_TOKEN")?.trim();
     const igBusinessAccountId = this.config.get<string>("META_IG_BUSINESS_ACCOUNT_ID")?.trim();
     const version = this.config.get<string>("META_GRAPH_VERSION")?.trim() || "v23.0";
@@ -210,7 +212,7 @@ export class MetaWebhookService {
   }
 
   private async processEvent(event: MetaMessageEvent) {
-    const organizationId = await this.resolveOrganizationId();
+    const organizationId = await this.resolveOrganizationId(event.recipientId);
     const ignoredReason = this.ignoredReason(event);
     const rawPayload = event.raw as Prisma.InputJsonValue;
 
@@ -287,7 +289,14 @@ export class MetaWebhookService {
     return undefined;
   }
 
-  private async resolveOrganizationId() {
+  private async resolveOrganizationId(externalAccountId?: string) {
+    if (externalAccountId) {
+      const connection = await (this.prisma as any).metaConnection.findFirst({
+        where: { externalAccountId, provider: "INSTAGRAM", status: "CONNECTED", organization: { status: "ACTIVE" } },
+        select: { organizationId: true },
+      });
+      if (connection?.organizationId) return connection.organizationId;
+    }
     const configuredOrganizationId = this.config.get<string>("META_ORGANIZATION_ID")?.trim();
     if (configuredOrganizationId) {
       const organization = await this.prisma.organization.findFirst({ where: { id: configuredOrganizationId, status: "ACTIVE" }, select: { id: true } });

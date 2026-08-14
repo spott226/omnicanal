@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { AuthPrincipal } from "../../../packages/shared/src/index";
 import { PrismaService } from "./prisma.service";
 
 type ChannelKey = "INSTAGRAM" | "WHATSAPP" | "FACEBOOK";
@@ -16,10 +17,10 @@ export class ChannelProviderService {
     return (this.config.get<string>("CHANNEL_PROVIDER_MODE") ?? "mock").toLowerCase();
   }
 
-  list() {
+  list(principal: AuthPrincipal) {
     const mode = this.mode();
     if (mode === "meta") {
-      return this.instagramConnection().then((instagram) => CHANNELS.map((channel) => {
+      return this.instagramConnection(principal.organizationId).then((instagram) => CHANNELS.map((channel) => {
         if (channel === "INSTAGRAM" && instagram) return this.item(channel, "CONNECTED", mode, instagram.username || instagram.externalAccountId || "Cuenta Instagram conectada");
         if (channel === "WHATSAPP") return this.item(channel, "PENDING", mode, "WhatsApp pendiente");
         return this.item(channel, "CONFIGURING", mode, channel === "FACEBOOK" ? "Facebook pendiente" : "Sin cuenta conectada");
@@ -60,7 +61,7 @@ export class ChannelProviderService {
   private message(status: ChannelStatus) {
     return {
       NOT_CONNECTED: "Canal no conectado.",
-      CONFIGURING: "Canal en configuracion mock.",
+      CONFIGURING: "Canal listo para autorizarse con el proveedor real.",
       CONNECTED: "Canal conectado con proveedor real.",
       CONNECTED_MOCK: "Canal conectado en modo mock. No usa cuentas reales.",
       PENDING: "Canal pendiente para una fase posterior.",
@@ -69,8 +70,7 @@ export class ChannelProviderService {
     }[status];
   }
 
-  private async instagramConnection() {
-    const organizationId = this.config.get<string>("META_ORGANIZATION_ID")?.trim();
+  private async instagramConnection(organizationId?: string | null) {
     if (!organizationId) return null;
     return (this.prisma as any).metaConnection.findUnique({
       where: { organizationId_provider: { organizationId, provider: "INSTAGRAM" } },
