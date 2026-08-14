@@ -16,7 +16,9 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableShutdownHooks();
-  await app.listen(config.get<number>("PORT") ?? 3001, "0.0.0.0");
+  const port = config.get<number>("PORT") ?? 3001;
+  await app.listen(port, "0.0.0.0");
+  console.log(`API listening on ${port}`);
 }
 void bootstrap().catch((error: unknown) => {
   // Railway only reports a generic health-check failure when startup exits.
