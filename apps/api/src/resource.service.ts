@@ -94,6 +94,28 @@ export class ResourceService {
     return { conversations, newLeads, hotLeads, appointments, aiHandled, humanHandled, byChannel: byChannel.map((row: { channel: string; _count: { _all: number } }) => ({ channel: row.channel, count: Math.max(0, row._count._all), percentage: safePercentage(row._count._all, conversations) })), funnel: { contacts, contacted, qualified, hot: hotLeads, appointments }, conversion: { newLeadToAppointment: safePercentage(appointments, newLeads), hotToAppointment: safePercentage(appointments, hotLeads) } };
   }
 
+  async platformOverview(principal: AuthPrincipal) {
+    if (principal.role !== "SUPER_ADMIN") throw new ForbiddenException("Solo el superadministrador puede consultar la plataforma");
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const [organizations, aiUsage, conversations] = await Promise.all([
+      this.prisma.organization.findMany({ orderBy: { createdAt: "desc" }, include: { subscriptions: { orderBy: { createdAt: "desc" }, take: 1, include: { planPrice: true } }, metaConnections: { where: { status: "CONNECTED" }, select: { provider: true } }, _count: { select: { memberships: true, conversations: true, contacts: true } } } }),
+      this.prisma.aIUsageRecord.groupBy({ by: ["organizationId"], where: { createdAt: { gte: monthStart }, status: "SUCCEEDED" }, _sum: { inputTokens: true, outputTokens: true, estimatedCost: true }, _count: { _all: true } }),
+      this.prisma.conversation.groupBy({ by: ["organizationId"], where: { createdAt: { gte: monthStart } }, _count: { _all: true } }),
+    ]);
+    const aiByOrganization = new Map(aiUsage.map((row: any) => [row.organizationId, { inputTokens: row._sum.inputTokens ?? 0, outputTokens: row._sum.outputTokens ?? 0, estimatedCostUsd: Number(row._sum.estimatedCost ?? 0), replies: row._count._all }]));
+    const conversationsByOrganization = new Map(conversations.map((row: any) => [row.organizationId, row._count._all]));
+    const clients = organizations.map((organization: any) => {
+      const subscription = organization.subscriptions[0] ?? null;
+      const ai = aiByOrganization.get(organization.id) ?? { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0, replies: 0 };
+      const periodConversations = conversationsByOrganization.get(organization.id) ?? 0;
+      const limit = subscription?.status === "TRIALING" ? 20 : subscription?.planPrice?.monthlyContactsLimit ?? 0;
+      return { id: organization.id, name: organization.name, slug: organization.slug, status: organization.status, createdAt: organization.createdAt, subscription: subscription ? { status: subscription.status, plan: subscription.planPrice.plan, interval: subscription.planPrice.interval, amountCents: subscription.planPrice.amountCents, cancelAtPeriodEnd: subscription.cancelAtPeriodEnd } : null, usage: { conversations: periodConversations, conversationLimit: limit, aiReplies: ai.replies, inputTokens: ai.inputTokens, outputTokens: ai.outputTokens, estimatedCostUsd: ai.estimatedCostUsd }, channels: organization.metaConnections.map((connection: any) => connection.provider), members: organization._count.memberships, contacts: organization._count.contacts, conversationsTotal: organization._count.conversations };
+    });
+    const paying = clients.filter((client: any) => client.subscription?.status === "ACTIVE");
+    const estimatedMrrCents = paying.reduce((total: number, client: any) => total + (client.subscription.interval === "YEARLY" ? Math.round(client.subscription.amountCents / 12) : client.subscription.amountCents), 0);
+    return { generatedAt: new Date().toISOString(), summary: { organizations: clients.length, activeOrganizations: clients.filter((client: any) => client.status === "ACTIVE").length, payingOrganizations: paying.length, trials: clients.filter((client: any) => client.subscription?.status === "TRIALING").length, estimatedMrrCents, aiInputTokens: clients.reduce((total: number, client: any) => total + client.usage.inputTokens, 0), aiOutputTokens: clients.reduce((total: number, client: any) => total + client.usage.outputTokens, 0), estimatedAiCostUsd: clients.reduce((total: number, client: any) => total + client.usage.estimatedCostUsd, 0) }, clients };
+  }
+
   async contacts(principal: AuthPrincipal, query: PageQueryDto) {
     const organizationId = this.org(principal); const where = { organizationId, ...(query.search ? { OR: [{ firstName: { contains: query.search, mode: "insensitive" as const } }, { lastName: { contains: query.search, mode: "insensitive" as const } }, { email: { contains: query.search, mode: "insensitive" as const } }] } : {}) };
     const [items, total] = await Promise.all([this.prisma.contact.findMany({ where, ...this.paging(query), orderBy: { lastInteractionAt: query.sort === "asc" ? "asc" : "desc" }, include: { tags: { include: { tag: true } } } }), this.prisma.contact.count({ where })]);
@@ -210,7 +232,9 @@ export class ResourceService {
     const delivery = await this.deliverOutboundMessage(conversation, reply);
     await this.prisma.message.update({ where: { id: message.id }, data: { status: delivery.sent ? "SENT" : "FAILED", ...(delivery.externalMessageId ? { externalMessageId: delivery.externalMessageId } : {}) } });
     await this.prisma.conversation.update({ where: { id }, data: { lastMessageAt: message.createdAt, aiStatus: "ACTIVE", summary: conversation.summary ?? "Respuesta IA generada con contexto del negocio." } });
-    await this.prisma.aIUsageRecord.create({ data: { organizationId, conversationId: id, provider: result.provider ?? "unknown", model: result.model ?? "unknown", inputTokens: Math.ceil((inbound.content.length + knowledgeContext.length) / 4), outputTokens: Math.ceil(reply.length / 4), estimatedCost: 0, latencyMs: Date.now() - startedAt, status: "SUCCEEDED" } });
+    const inputTokens = Math.ceil((inbound.content.length + knowledgeContext.length) / 4);
+    const outputTokens = Math.ceil(reply.length / 4);
+    await this.prisma.aIUsageRecord.create({ data: { organizationId, conversationId: id, provider: result.provider ?? "unknown", model: result.model ?? "unknown", inputTokens, outputTokens, estimatedCost: this.estimateAiCost(inputTokens, outputTokens), latencyMs: Date.now() - startedAt, status: "SUCCEEDED" } });
     if (input.principal) await this.audit(input.principal, delivery.sent ? "AI_REPLY_SENT_TO_META" : "AI_REPLY_CREATED", "Conversation", id, { provider: result.provider, metaDelivery: delivery.status });
     return input.principal ? this.conversation(input.principal, id) : { replied: true, conversationId: id, sent: delivery.sent, status: delivery.status };
   }
@@ -450,6 +474,11 @@ export class ResourceService {
     } catch {
       throw new BadRequestException("No fue posible leer el token de Instagram. Conecta la cuenta nuevamente.");
     }
+  }
+  private estimateAiCost(inputTokens: number, outputTokens: number) {
+    const inputRate = Number(this.config?.get<number>("AI_INPUT_COST_PER_MILLION_USD") ?? 0);
+    const outputRate = Number(this.config?.get<number>("AI_OUTPUT_COST_PER_MILLION_USD") ?? 0);
+    return Number((((inputTokens / 1_000_000) * inputRate) + ((outputTokens / 1_000_000) * outputRate)).toFixed(6));
   }
   private async ensureSeatLimit(organizationId: string) {
     const subscriptionApi = (this.prisma as any).subscription;

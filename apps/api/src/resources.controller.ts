@@ -16,6 +16,7 @@ export class ResourcesController {
   @Get("organization/current") @Protected(...ALL) organization(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.currentOrganization(principal); }
   @Patch("organization/current") @Protected(...ADMINS) updateOrganization(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: UpdateOrganizationDto) { return this.resources.updateOrganization(principal, dto); }
   @Get("dashboard") @Protected(...MANAGERS) dashboard(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.dashboard(principal); }
+  @Get("superadmin/overview") @Protected("SUPER_ADMIN") superadminOverview(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.platformOverview(principal); }
   @Get("team/members") @Protected(...ADMINS) teamMembers(@CurrentPrincipal() principal: AuthPrincipal) { return this.resources.teamMembers(principal); }
   @Post("team/members") @Protected(...ADMINS) inviteMember(@CurrentPrincipal() principal: AuthPrincipal, @Body() dto: InviteMemberDto) { return this.resources.inviteMember(principal, dto); }
   @Patch("team/members/:id") @Protected(...ADMINS) updateMemberRole(@CurrentPrincipal() principal: AuthPrincipal, @Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateMemberRoleDto) { return this.resources.updateMemberRole(principal, id, dto); }

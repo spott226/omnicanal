@@ -19,6 +19,8 @@ const schema = z.object({
   OPENAI_MODEL: z.string().optional().default(""),
   DEEPSEEK_API_KEY: z.string().optional().default(""),
   DEEPSEEK_MODEL: z.string().optional().default(""),
+  AI_INPUT_COST_PER_MILLION_USD: z.coerce.number().min(0).optional().default(0),
+  AI_OUTPUT_COST_PER_MILLION_USD: z.coerce.number().min(0).optional().default(0),
   CHANNEL_PROVIDER_MODE: z.enum(["mock", "meta"]).optional().default("mock"),
   META_APP_ID: z.string().optional().default(""),
   META_APP_SECRET: z.string().optional().default(""),
