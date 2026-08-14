@@ -320,7 +320,7 @@ export class MetaWebhookService {
       if (connection?.organizationId) return connection.organizationId;
     }
     return null;
-    /* Legacy single-tenant fallback intentionally disabled. Connections must map by recipient account. 
+    /* Legacy single-tenant fallback intentionally disabled. Connections must map by recipient account.
     const configuredOrganizationId = this.config.get<string>("META_ORGANIZATION_ID")?.trim();
     if (configuredOrganizationId) {
       const legacyOrganization = await this.prisma.organization.findFirst({ where: { id: configuredOrganizationId, status: "ACTIVE" }, select: { id: true } });
