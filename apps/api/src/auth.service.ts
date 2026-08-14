@@ -111,7 +111,10 @@ export class AuthService {
 
   async logout(principal: AuthPrincipal, response: Response) {
     await this.prisma.session.updateMany({ where: { id: principal.sessionId, userId: principal.userId }, data: { revokedAt: new Date() } });
-    response.clearCookie("nexoia_session"); response.clearCookie("nexoia_csrf");
+    const secure = this.config.get<string>("NODE_ENV") === "production";
+    const sameSite = secure ? "none" : "lax";
+    response.clearCookie("nexoia_session", { secure, sameSite, path: "/" });
+    response.clearCookie("nexoia_csrf", { secure, sameSite, path: "/" });
     return { ok: true };
   }
 
@@ -129,7 +132,8 @@ export class AuthService {
   }
   private setCookies(response: Response, token: string, maxAge = 8 * 60 * 60 * 1000) {
     const secure = this.config.get<string>("NODE_ENV") === "production";
-    response.cookie("nexoia_session", token, { httpOnly: true, secure, sameSite: "lax", maxAge, path: "/" });
-    response.cookie("nexoia_csrf", randomBytes(24).toString("hex"), { httpOnly: false, secure, sameSite: "lax", maxAge, path: "/" });
+    const sameSite = secure ? "none" : "lax";
+    response.cookie("nexoia_session", token, { httpOnly: true, secure, sameSite, maxAge, path: "/" });
+    response.cookie("nexoia_csrf", randomBytes(24).toString("hex"), { httpOnly: false, secure, sameSite, maxAge, path: "/" });
   }
 }
