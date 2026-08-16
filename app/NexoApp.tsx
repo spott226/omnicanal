@@ -315,7 +315,22 @@ function Inbox({ conversations, setConversations, active, setActiveId, notify, o
   const [aiLoading,setAiLoading]=useState(false);
   const [noteDraft,setNoteDraft]=useState("");
   const filtered = useMemo(() => conversations.filter(c => c.name.toLowerCase().includes(query.toLowerCase()) && (filter === "Todos" || CHANNELS[c.channel].label === filter || c.temperature === filter || (filter==="IA activa"&&c.ai) || (filter==="Pausadas"&&!c.ai) || (filter==="Humano"&&c.transferred) || (filter==="Con cita"&&c.hasAppointment))), [conversations, query, filter]);
-  const update = (partial: Partial<Conversation>) => setConversations(conversations.map(c => c.id === active.id ? {...c, ...partial} : c));
+  const update = (partial: Partial<Conversation>) => {
+    const isTakingControl = partial.transferred === true || (partial.ai === false && !("transferred" in partial));
+    const isReturningToAi = partial.transferred === false || (partial.ai === true && !("transferred" in partial));
+    if (typeof active.id === "string") {
+      const conversationId = active.id;
+      if (isTakingControl) {
+        void api.takeConversation(conversationId).then(syncConversation).catch(() => notify("No se pudo pausar la IA"));
+        return;
+      }
+      if (isReturningToAi) {
+        void api.returnConversationToAi(conversationId).then(syncConversation).catch(() => notify("No se pudo devolver la conversación a IA"));
+        return;
+      }
+    }
+    setConversations(conversations.map(c => c.id === active.id ? {...c, ...partial} : c));
+  };
   const send = async () => {
     const body = draft.trim();
     if (!body) return;
